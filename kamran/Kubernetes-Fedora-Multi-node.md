@@ -215,6 +215,8 @@ systemctl disable iptables-services firewalld
 systemctl stop iptables-services firewalld
 ```
 
+**NOTE:** After OS update, the firewalld service may become active again. Watchout for that! The first symptom of this problem will be Nodes not becoming ready no matter what you do, unless you clear the firewall rules on master and nodes.
+
 
 ## Configure the Kubernetes services on the master:
 Edit /etc/kubernetes/apiserver to appear as what is shown below. The service-cluster-ip-range IP addresses must be an unused block of addresses, not used anywhere else. They do not need to be routed or assigned to anything.
@@ -249,7 +251,7 @@ I am not sure whethere to disable it or enable it.
 Edit /etc/etcd/etcd.conf on master (fed-master), and allow etcd to listen all the ips (0.0.0.0) instead of 127.0.0.1. If not, you will get the error like “connection refused”. You will only need to change one directive in /etc/etcd/etcd.conf, which is:
 
 ```
-ETCD_LISTEN_CLIENT_URLS="http://localhost:2379"
+ETCD_LISTEN_CLIENT_URLS="http://0.0.0.0:2379"
 
 ```
 
@@ -271,7 +273,7 @@ Redirecting to /bin/systemctl status  etcd.service
    Active: active (running) since Thu 2016-04-28 14:04:18 CEST; 3s ago
  Main PID: 11019 (etcd)
    CGroup: /system.slice/etcd.service
-           └─11019 /usr/bin/etcd --name=default --data-dir=/var/lib/etcd/default.etcd --listen-client-urls=http://localhost:2379
+           └─11019 /usr/bin/etcd --name=default --data-dir=/var/lib/etcd/default.etcd --listen-client-urls=http://0.0.0.0:2379
 
 Apr 28 14:04:18 fed-master systemd[1]: Started Etcd Server.
 . . . 
@@ -428,8 +430,62 @@ The cluster should be running! Launch a test pod.
 
 
 
+## Start a pod with nginx:
+
+```
+[root@fed-master ~]# kubectl run nginx --image=nginx 
+replicationcontroller "nginx" created
+[root@fed-master ~]# 
 
 
+[root@fed-master ~]# kubectl get rc
+CONTROLLER   CONTAINER(S)   IMAGE(S)   SELECTOR    REPLICAS   AGE
+nginx        nginx          nginx      run=nginx   1          3m
+
+
+[root@fed-master ~]# kubectl get pods
+[root@fed-master ~]# 
+
+```
+What! No pods! 
+
+
+
+Errors:
+
+```
+[root@fed-master ~]# kubectl get events
+
+31s         25s        4         nginx       ReplicationController               Warning   FailedCreate            {replication-controller }   Error creating: pods "nginx-" is forbidden: no API token found for service account default/default, retry after the token is automatically created and added to the service account
+```
+
+Journalctl entries:
+
+```
+Apr 28 15:07:00 fed-master kube-controller-manager[790]: E0428 15:07:00.844605     790 replication_controller.go:364] unable to create pods: pods "nginx-" is forbidden: no API token found for service account default/default, retry after the token is automatically created and added to the service account
+``` 
+
+
+
+
+Try to disable admission controls in /etc/kubernetes/apiserver on master (fed-master):
+
+```
+## KUBE_ADMISSION_CONTROL="--admission-control=NamespaceLifecycle,NamespaceExists,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota"
+```
+
+```
+service kube-apiserver restart
+```
+
+Now it is working!!!
+
+```
+[root@fed-master ~]# kubectl get pods
+NAME          READY     STATUS    RESTARTS   AGE
+nginx-nk0lj   1/1       Running   0          1m
+[root@fed-master ~]# 
+```
 
 
 
