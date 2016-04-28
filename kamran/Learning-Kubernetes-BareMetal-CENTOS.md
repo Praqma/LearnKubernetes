@@ -22,7 +22,7 @@ The Kubernetes package provides a few services:
 * kubelet, 
 * kube-proxy. 
 
-These services are managed by systemd and the configuration resides in a central location: /etc/kubernetes. 
+These services are managed by **systemd** and the configuration resides in a central location: /etc/kubernetes. 
 
 We will break the services up between the hosts. The first host, centos-master, will be the Kubernetes master. This (master) host will run the kube-apiserver, kube-controller-manager, and kube-scheduler and etcd. The remaining host, centos-minion will be the "node" and run kubelet, proxy, cadvisor and docker. 
 
@@ -118,7 +118,7 @@ Total download size: 49 M
 Installed size: 231 M
 ```
 
-When you install etcd after you have installed kubernetes, it just pulls in etcd package.
+Install etcd after you have installed kubernetes, it just pulls in etcd package.
 
 ```
 Dependencies Resolved
