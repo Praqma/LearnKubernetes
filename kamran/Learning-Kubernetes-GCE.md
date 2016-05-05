@@ -1,11 +1,14 @@
 # Running WordPress with a Single Pod
 Source: https://cloud.google.com/container-engine/docs/tutorials/hello-wordpress
 
-Prerequisits: 
-Install gcloud and kubectl on local computer.
+## Prerequisits: 
+Install gcloud and kubectl on local computer, using instructions from here: https://cloud.google.com/container-engine/docs/before-you-begin .
+Also:
+* Enable Billing for your account,
+* Enable Container Engine API
 
 
-Setup environment:
+## Set gcloud defaults:
 
 ``` 
 [kamran@kworkhorse ~]$ gcloud config list
@@ -21,7 +24,8 @@ project = learn-kubernetes-1289
 ``` 
 
 
-Create new project in google cloud: https://console.cloud.google.com/project
+## Create new project in google cloud: 
+Using: https://console.cloud.google.com/project
 
 Note: Project cannot be created through gcloud command line. You can list projects though using:
 
@@ -155,7 +159,7 @@ Events:
 
 
 
-Services:
+## Services:
 Right now there is no services defined. We only see the default / built-in kubernetes service. 
 
 ```
