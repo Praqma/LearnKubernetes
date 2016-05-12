@@ -859,12 +859,265 @@ So it works! Hurray!!!!
 
 Lets check the node, on the OS level and see what are the differences. 
 
+IP addresses:
+```
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN 
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc pfifo_fast state UP qlen 1000
+    link/ether 42:01:0a:84:00:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.132.0.2/32 brd 10.132.0.2 scope global eth0
+       valid_lft forever preferred_lft forever
+4: cbr0: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1460 qdisc htb state UP 
+    link/ether 02:cd:00:85:9e:fb brd ff:ff:ff:ff:ff:ff
+    inet 10.80.0.1/24 scope global cbr0
+       valid_lft forever preferred_lft forever
+6: veth49e9114: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP 
+    link/ether b2:ef:f1:7c:bb:1e brd ff:ff:ff:ff:ff:ff
+8: veth4aace90: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP 
+    link/ether 5a:c8:af:b1:24:b6 brd ff:ff:ff:ff:ff:ff
+10: vethc6746c9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP 
+    link/ether 62:dd:a6:f8:3b:ef brd ff:ff:ff:ff:ff:ff
+12: vethc9920da: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP 
+    link/ether 22:a3:e6:98:59:5e brd ff:ff:ff:ff:ff:ff
+14: veth60f38a9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP 
+    link/ether 8a:15:ec:ff:45:59 brd ff:ff:ff:ff:ff:ff
+16: veth100e966: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP 
+    link/ether 02:cd:00:85:9e:fb brd ff:ff:ff:ff:ff:ff
+18: vethac3104f: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP 
+    link/ether a2:80:7a:6f:24:19 brd ff:ff:ff:ff:ff:ff
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# 
+```
 
 
 
+Routing table:
+```
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.132.0.1      0.0.0.0         UG    0      0        0 eth0
+10.80.0.0       0.0.0.0         255.255.255.0   U     0      0        0 cbr0
+10.132.0.1      0.0.0.0         255.255.255.255 UH    0      0        0 eth0
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# 
+```
+
+Docker containers running:
+```
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# docker ps
+CONTAINER ID        IMAGE                                                                  COMMAND                  CREATED             STATUS              PORTS               NAMES
+b35aeb0924f3        httpd                                                                  "httpd-foreground"       16 minutes ago      Up 16 minutes                           k8s_apache.fb545706_apache-3550117020-aob5w_default_4610caea-1836-11e6-9746-42010af00171_7eaec0a4
+689905cebff2        gcr.io/google_containers/pause:2.0                                     "/pause"                 16 minutes ago      Up 16 minutes                           k8s_POD.cf58006d_apache-3550117020-aob5w_default_4610caea-1836-11e6-9746-42010af00171_b93a41d7
+aa7253f01424        nginx                                                                  "nginx -g 'daemon off"   35 minutes ago      Up 35 minutes                           k8s_nginx.11cb56c8_nginx-198147104-pu6pl_default_8cf4a687-1833-11e6-9746-42010af00171_550f13b0
+febb6dbdf051        gcr.io/google_containers/pause:2.0                                     "/pause"                 35 minutes ago      Up 35 minutes                           k8s_POD.cf58006d_nginx-198147104-pu6pl_default_8cf4a687-1833-11e6-9746-42010af00171_220e800e
+2c18ede8c67c        eu.gcr.io/google_containers/glbc:0.6.0                                 "/glbc --default-back"   3 hours ago         Up 3 hours                              k8s_l7-lb-controller.923c85a0_l7-lb-controller-v0.6.0-e2dfm_kube-system_9f1aefb1-181e-11e6-9b02-42010af00171_21f29442
+e810ca2debf3        eu.gcr.io/google_containers/exechealthz:1.0                            "/exechealthz '-cmd=n"   3 hours ago         Up 3 hours                              k8s_healthz.8b5f150c_kube-dns-v11-a4eic_kube-system_9f1c6cfc-181e-11e6-9b02-42010af00171_2148ee45
+3b962eead2b4        eu.gcr.io/google_containers/skydns:2015-10-13-8c72f8c                  "/skydns -machines=ht"   3 hours ago         Up 3 hours                              k8s_skydns.44eb3b5f_kube-dns-v11-a4eic_kube-system_9f1c6cfc-181e-11e6-9b02-42010af00171_b60408f1
+4cfc7bd68f01        eu.gcr.io/google_containers/addon-resizer:1.0                          "/pod_nanny --cpu=100"   3 hours ago         Up 3 hours                              k8s_heapster-nanny.2e58c959_heapster-v1.0.2-2627135191-rd36a_kube-system_9f2572a9-181e-11e6-9b02-42010af00171_edfa5093
+e78cc9e63ce9        eu.gcr.io/google_containers/kube2sky:1.14                              "/kube2sky --domain=c"   3 hours ago         Up 3 hours                              k8s_kube2sky.88c01fa_kube-dns-v11-a4eic_kube-system_9f1c6cfc-181e-11e6-9b02-42010af00171_75021e90
+c55125f7d5e8        eu.gcr.io/google_containers/heapster:v1.0.2                            "/heapster --source=k"   3 hours ago         Up 3 hours                              k8s_heapster.ccd7f1d4_heapster-v1.0.2-2627135191-rd36a_kube-system_9f2572a9-181e-11e6-9b02-42010af00171_77f4dc0c
+835efc5e9f61        eu.gcr.io/google_containers/etcd-amd64:2.2.1                           "/usr/local/bin/etcd "   3 hours ago         Up 3 hours                              k8s_etcd.43a035be_kube-dns-v11-a4eic_kube-system_9f1c6cfc-181e-11e6-9b02-42010af00171_e7b99671
+5d947e64122c        eu.gcr.io/google_containers/defaultbackend:1.0                         "/server"                3 hours ago         Up 3 hours                              k8s_default-http-backend.4f0d90c1_l7-lb-controller-v0.6.0-e2dfm_kube-system_9f1aefb1-181e-11e6-9b02-42010af00171_5aaa3045
+e7cf042cebfb        eu.gcr.io/google_containers/kubernetes-dashboard-amd64:v1.0.1          "/dashboard --port=90"   3 hours ago         Up 3 hours                              k8s_kubernetes-dashboard.fda9359_kubernetes-dashboard-v1.0.1-kjdpz_kube-system_9f1ceb4a-181e-11e6-9b02-42010af00171_d1983abd
+b29ff1756a54        eu.gcr.io/google_containers/fluentd-gcp:1.18                           "/bin/sh -c '/usr/sbi"   3 hours ago         Up 3 hours                              k8s_fluentd-cloud-logging.5165de6b_fluentd-cloud-logging-gke-test-twowebservers-default-pool-89515855-ey9l_kube-system_a31ba0629311d10bb74b3e4126d8e7f2_08d8fddb
+bf286ef01180        gcr.io/google_containers/pause:2.0                                     "/pause"                 3 hours ago         Up 3 hours                              k8s_POD.6059dfa2_heapster-v1.0.2-2627135191-rd36a_kube-system_9f2572a9-181e-11e6-9b02-42010af00171_48dc9884
+df3e0d7785d3        gcr.io/google_containers/pause:2.0                                     "/pause"                 3 hours ago         Up 3 hours                              k8s_POD.e2764897_kube-dns-v11-a4eic_kube-system_9f1c6cfc-181e-11e6-9b02-42010af00171_e7472010
+723b247c642a        gcr.io/google_containers/pause:2.0                                     "/pause"                 3 hours ago         Up 3 hours                              k8s_POD.364e00d5_l7-lb-controller-v0.6.0-e2dfm_kube-system_9f1aefb1-181e-11e6-9b02-42010af00171_8dbcb3fa
+7a8dd3f9b6f4        gcr.io/google_containers/pause:2.0                                     "/pause"                 3 hours ago         Up 3 hours                              k8s_POD.3a1c00d7_kubernetes-dashboard-v1.0.1-kjdpz_kube-system_9f1ceb4a-181e-11e6-9b02-42010af00171_14376a66
+cca42ccbe4ba        gcr.io/google_containers/kube-proxy:c126c6dbe73c9e7db8b835f2dd6b8f8e   "/bin/sh -c 'kube-pro"   3 hours ago         Up 3 hours                              k8s_kube-proxy.471fcb7_kube-proxy-gke-test-twowebservers-default-pool-89515855-ey9l_kube-system_612819515c45ddd16f5b4f6eaa4bf70d_0da726a0
+c4ecf1156915        gcr.io/google_containers/pause:2.0                                     "/pause"                 3 hours ago         Up 3 hours                              k8s_POD.6059dfa2_kube-proxy-gke-test-twowebservers-default-pool-89515855-ey9l_kube-system_612819515c45ddd16f5b4f6eaa4bf70d_205bf883
+c10f97d4d22f        gcr.io/google_containers/pause:2.0                                     "/pause"                 3 hours ago         Up 3 hours                              k8s_POD.6059dfa2_fluentd-cloud-logging-gke-test-twowebservers-default-pool-89515855-ey9l_kube-system_a31ba0629311d10bb74b3e4126d8e7f2_2131afe6
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# 
+```
+
+IPTables:
+```
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# iptables-save 
+# Generated by iptables-save v1.4.14 on Thu May 12 11:58:10 2016
+*filter
+:INPUT ACCEPT [9:648]
+:FORWARD ACCEPT [6:518]
+:OUTPUT ACCEPT [4:360]
+:DOCKER - [0:0]
+:KUBE-SERVICES - [0:0]
+-A FORWARD -o docker0 -j DOCKER
+-A FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -i docker0 ! -o docker0 -j ACCEPT
+-A FORWARD -i docker0 -o docker0 -j ACCEPT
+-A OUTPUT -m comment --comment "kubernetes service portals" -j KUBE-SERVICES
+COMMIT
+# Completed on Thu May 12 11:58:10 2016
+# Generated by iptables-save v1.4.14 on Thu May 12 11:58:10 2016
+*nat
+:PREROUTING ACCEPT [3:259]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:KUBE-MARK-MASQ - [0:0]
+:KUBE-NODEPORTS - [0:0]
+:KUBE-POSTROUTING - [0:0]
+:KUBE-SEP-54GVWSVFIGJ7TMTH - [0:0]
+:KUBE-SEP-CASODNYIRQUV4T75 - [0:0]
+:KUBE-SEP-CZ3HZ7CAA4OJDRGD - [0:0]
+:KUBE-SEP-HHJSMBGGGRTBKTRI - [0:0]
+:KUBE-SEP-HZPXAQ52KIT6NB22 - [0:0]
+:KUBE-SEP-M2ZJEPH4S7IJHIJP - [0:0]
+:KUBE-SEP-SAHG6L2BLG55EJ24 - [0:0]
+:KUBE-SEP-V2UJGDQORSRVNQDT - [0:0]
+:KUBE-SERVICES - [0:0]
+:KUBE-SVC-4N57TFCL4MD7ZTDA - [0:0]
+:KUBE-SVC-5SZWMTHQB46VUA33 - [0:0]
+:KUBE-SVC-BJM46V3U5RZHCFRZ - [0:0]
+:KUBE-SVC-ERIFXISQEP7F7OF4 - [0:0]
+:KUBE-SVC-NPX46M4PTMTKRN6Y - [0:0]
+:KUBE-SVC-TCOU7JCQXEZGVUNU - [0:0]
+:KUBE-SVC-XGLOHA7QRQ3V22RZ - [0:0]
+:KUBE-SVC-XP4WJ6VSLGWALMW5 - [0:0]
+-A PREROUTING -m comment --comment "kubernetes service portals" -j KUBE-SERVICES
+-A OUTPUT -m comment --comment "kubernetes service portals" -j KUBE-SERVICES
+-A POSTROUTING -m comment --comment "kubernetes postrouting rules" -j KUBE-POSTROUTING
+-A POSTROUTING ! -d 10.0.0.0/8 -m addrtype ! --dst-type LOCAL -j MASQUERADE
+-A KUBE-MARK-MASQ -j MARK --set-xmark 0x4000/0x4000
+-A KUBE-NODEPORTS -p tcp -m comment --comment "kube-system/default-http-backend:http" -m tcp --dport 31291 -j KUBE-MARK-MASQ
+-A KUBE-NODEPORTS -p tcp -m comment --comment "kube-system/default-http-backend:http" -m tcp --dport 31291 -j KUBE-SVC-XP4WJ6VSLGWALMW5
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/nginx:" -m tcp --dport 30007 -j KUBE-MARK-MASQ
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/nginx:" -m tcp --dport 30007 -j KUBE-SVC-4N57TFCL4MD7ZTDA
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/apache:" -m tcp --dport 32230 -j KUBE-MARK-MASQ
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/apache:" -m tcp --dport 32230 -j KUBE-SVC-5SZWMTHQB46VUA33
+-A KUBE-POSTROUTING -m comment --comment "kubernetes service traffic requiring SNAT" -m mark --mark 0x4000/0x4000 -j MASQUERADE
+-A KUBE-SEP-54GVWSVFIGJ7TMTH -s 10.80.0.4/32 -m comment --comment "kube-system/default-http-backend:http" -j KUBE-MARK-MASQ
+-A KUBE-SEP-54GVWSVFIGJ7TMTH -p tcp -m comment --comment "kube-system/default-http-backend:http" -m tcp -j DNAT --to-destination 10.80.0.4:8080
+-A KUBE-SEP-CASODNYIRQUV4T75 -s 10.80.0.5/32 -m comment --comment "kube-system/kube-dns:dns-tcp" -j KUBE-MARK-MASQ
+-A KUBE-SEP-CASODNYIRQUV4T75 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp" -m tcp -j DNAT --to-destination 10.80.0.5:53
+-A KUBE-SEP-CZ3HZ7CAA4OJDRGD -s 10.80.0.5/32 -m comment --comment "kube-system/kube-dns:dns" -j KUBE-MARK-MASQ
+-A KUBE-SEP-CZ3HZ7CAA4OJDRGD -p udp -m comment --comment "kube-system/kube-dns:dns" -m udp -j DNAT --to-destination 10.80.0.5:53
+-A KUBE-SEP-HHJSMBGGGRTBKTRI -s 10.80.0.3/32 -m comment --comment "kube-system/kubernetes-dashboard:" -j KUBE-MARK-MASQ
+-A KUBE-SEP-HHJSMBGGGRTBKTRI -p tcp -m comment --comment "kube-system/kubernetes-dashboard:" -m tcp -j DNAT --to-destination 10.80.0.3:9090
+-A KUBE-SEP-HZPXAQ52KIT6NB22 -s 23.251.134.151/32 -m comment --comment "default/kubernetes:https" -j KUBE-MARK-MASQ
+-A KUBE-SEP-HZPXAQ52KIT6NB22 -p tcp -m comment --comment "default/kubernetes:https" -m tcp -j DNAT --to-destination 23.251.134.151:443
+-A KUBE-SEP-M2ZJEPH4S7IJHIJP -s 10.80.0.8/32 -m comment --comment "default/apache:" -j KUBE-MARK-MASQ
+-A KUBE-SEP-M2ZJEPH4S7IJHIJP -p tcp -m comment --comment "default/apache:" -m tcp -j DNAT --to-destination 10.80.0.8:80
+-A KUBE-SEP-SAHG6L2BLG55EJ24 -s 10.80.0.6/32 -m comment --comment "kube-system/heapster:" -j KUBE-MARK-MASQ
+-A KUBE-SEP-SAHG6L2BLG55EJ24 -p tcp -m comment --comment "kube-system/heapster:" -m tcp -j DNAT --to-destination 10.80.0.6:8082
+-A KUBE-SEP-V2UJGDQORSRVNQDT -s 10.80.0.7/32 -m comment --comment "default/nginx:" -j KUBE-MARK-MASQ
+-A KUBE-SEP-V2UJGDQORSRVNQDT -p tcp -m comment --comment "default/nginx:" -m tcp -j DNAT --to-destination 10.80.0.7:80
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.240.1/32 -p tcp -m comment --comment "default/kubernetes:https cluster IP" -m tcp --dport 443 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.240.1/32 -p tcp -m comment --comment "default/kubernetes:https cluster IP" -m tcp --dport 443 -j KUBE-SVC-NPX46M4PTMTKRN6Y
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.242.211/32 -p tcp -m comment --comment "kube-system/default-http-backend:http cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.242.211/32 -p tcp -m comment --comment "kube-system/default-http-backend:http cluster IP" -m tcp --dport 80 -j KUBE-SVC-XP4WJ6VSLGWALMW5
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.247.155/32 -p tcp -m comment --comment "kube-system/heapster: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.247.155/32 -p tcp -m comment --comment "kube-system/heapster: cluster IP" -m tcp --dport 80 -j KUBE-SVC-BJM46V3U5RZHCFRZ
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.240.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.240.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -j KUBE-SVC-TCOU7JCQXEZGVUNU
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.240.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.240.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -j KUBE-SVC-ERIFXISQEP7F7OF4
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.252.224/32 -p tcp -m comment --comment "default/nginx: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.252.224/32 -p tcp -m comment --comment "default/nginx: cluster IP" -m tcp --dport 80 -j KUBE-SVC-4N57TFCL4MD7ZTDA
+-A KUBE-SERVICES -d 146.148.10.228/32 -p tcp -m comment --comment "default/nginx: loadbalancer IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 146.148.10.228/32 -p tcp -m comment --comment "default/nginx: loadbalancer IP" -m tcp --dport 80 -j KUBE-SVC-4N57TFCL4MD7ZTDA
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.252.143/32 -p tcp -m comment --comment "default/apache: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.252.143/32 -p tcp -m comment --comment "default/apache: cluster IP" -m tcp --dport 80 -j KUBE-SVC-5SZWMTHQB46VUA33
+-A KUBE-SERVICES -d 130.211.80.214/32 -p tcp -m comment --comment "default/apache: loadbalancer IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 130.211.80.214/32 -p tcp -m comment --comment "default/apache: loadbalancer IP" -m tcp --dport 80 -j KUBE-SVC-5SZWMTHQB46VUA33
+-A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.254.147/32 -p tcp -m comment --comment "kube-system/kubernetes-dashboard: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.83.254.147/32 -p tcp -m comment --comment "kube-system/kubernetes-dashboard: cluster IP" -m tcp --dport 80 -j KUBE-SVC-XGLOHA7QRQ3V22RZ
+-A KUBE-SERVICES -m comment --comment "kubernetes service nodeports; NOTE: this must be the last rule in this chain" -m addrtype --dst-type LOCAL -j KUBE-NODEPORTS
+-A KUBE-SVC-4N57TFCL4MD7ZTDA -m comment --comment "default/nginx:" -j KUBE-SEP-V2UJGDQORSRVNQDT
+-A KUBE-SVC-5SZWMTHQB46VUA33 -m comment --comment "default/apache:" -j KUBE-SEP-M2ZJEPH4S7IJHIJP
+-A KUBE-SVC-BJM46V3U5RZHCFRZ -m comment --comment "kube-system/heapster:" -j KUBE-SEP-SAHG6L2BLG55EJ24
+-A KUBE-SVC-ERIFXISQEP7F7OF4 -m comment --comment "kube-system/kube-dns:dns-tcp" -j KUBE-SEP-CASODNYIRQUV4T75
+-A KUBE-SVC-NPX46M4PTMTKRN6Y -m comment --comment "default/kubernetes:https" -j KUBE-SEP-HZPXAQ52KIT6NB22
+-A KUBE-SVC-TCOU7JCQXEZGVUNU -m comment --comment "kube-system/kube-dns:dns" -j KUBE-SEP-CZ3HZ7CAA4OJDRGD
+-A KUBE-SVC-XGLOHA7QRQ3V22RZ -m comment --comment "kube-system/kubernetes-dashboard:" -j KUBE-SEP-HHJSMBGGGRTBKTRI
+-A KUBE-SVC-XP4WJ6VSLGWALMW5 -m comment --comment "kube-system/default-http-backend:http" -j KUBE-SEP-54GVWSVFIGJ7TMTH
+COMMIT
+# Completed on Thu May 12 11:58:10 2016
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# 
+``` 
 
 
+Try to see the difference of iptables rules before and after the two pods were created:
+```
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# iptables-save > iptables-after-pods.txt 
+```
 
+
+```
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# diff iptables-before-pods.txt iptables-after-pods.txt 
+1c1
+< # Generated by iptables-save v1.4.14 on Thu May 12 11:18:09 2016
+---
+> # Generated by iptables-save v1.4.14 on Thu May 12 11:57:00 2016
+3,5c3,5
+< :INPUT ACCEPT [379:107117]
+< :FORWARD ACCEPT [681:195432]
+< :OUTPUT ACCEPT [360:62626]
+---
+> :INPUT ACCEPT [175:38950]
+> :FORWARD ACCEPT [429:124186]
+> :OUTPUT ACCEPT [169:23546]
+14,15c14,15
+< # Completed on Thu May 12 11:18:09 2016
+< # Generated by iptables-save v1.4.14 on Thu May 12 11:18:09 2016
+---
+> # Completed on Thu May 12 11:57:00 2016
+> # Generated by iptables-save v1.4.14 on Thu May 12 11:57:00 2016
+17c17
+< :PREROUTING ACCEPT [39:3076]
+---
+> :PREROUTING ACCEPT [0:0]
+19,20c19,20
+< :OUTPUT ACCEPT [7:420]
+< :POSTROUTING ACCEPT [7:420]
+---
+> :OUTPUT ACCEPT [0:0]
+> :POSTROUTING ACCEPT [0:0]
+28a29
+> :KUBE-SEP-M2ZJEPH4S7IJHIJP - [0:0]
+29a31
+> :KUBE-SEP-V2UJGDQORSRVNQDT - [0:0]
+30a33,34
+> :KUBE-SVC-4N57TFCL4MD7ZTDA - [0:0]
+> :KUBE-SVC-5SZWMTHQB46VUA33 - [0:0]
+41a46,49
+> -A KUBE-NODEPORTS -p tcp -m comment --comment "default/nginx:" -m tcp --dport 30007 -j KUBE-MARK-MASQ
+> -A KUBE-NODEPORTS -p tcp -m comment --comment "default/nginx:" -m tcp --dport 30007 -j KUBE-SVC-4N57TFCL4MD7ZTDA
+> -A KUBE-NODEPORTS -p tcp -m comment --comment "default/apache:" -m tcp --dport 32230 -j KUBE-MARK-MASQ
+> -A KUBE-NODEPORTS -p tcp -m comment --comment "default/apache:" -m tcp --dport 32230 -j KUBE-SVC-5SZWMTHQB46VUA33
+54a63,64
+> -A KUBE-SEP-M2ZJEPH4S7IJHIJP -s 10.80.0.8/32 -m comment --comment "default/apache:" -j KUBE-MARK-MASQ
+> -A KUBE-SEP-M2ZJEPH4S7IJHIJP -p tcp -m comment --comment "default/apache:" -m tcp -j DNAT --to-destination 10.80.0.8:80
+56a67,80
+> -A KUBE-SEP-V2UJGDQORSRVNQDT -s 10.80.0.7/32 -m comment --comment "default/nginx:" -j KUBE-MARK-MASQ
+> -A KUBE-SEP-V2UJGDQORSRVNQDT -p tcp -m comment --comment "default/nginx:" -m tcp -j DNAT --to-destination 10.80.0.7:80
+> -A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.240.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -j KUBE-MARK-MASQ
+> -A KUBE-SERVICES -d 10.83.240.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -j KUBE-SVC-TCOU7JCQXEZGVUNU
+> -A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.240.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -j KUBE-MARK-MASQ
+> -A KUBE-SERVICES -d 10.83.240.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -j KUBE-SVC-ERIFXISQEP7F7OF4
+> -A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.252.224/32 -p tcp -m comment --comment "default/nginx: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+> -A KUBE-SERVICES -d 10.83.252.224/32 -p tcp -m comment --comment "default/nginx: cluster IP" -m tcp --dport 80 -j KUBE-SVC-4N57TFCL4MD7ZTDA
+> -A KUBE-SERVICES -d 146.148.10.228/32 -p tcp -m comment --comment "default/nginx: loadbalancer IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+> -A KUBE-SERVICES -d 146.148.10.228/32 -p tcp -m comment --comment "default/nginx: loadbalancer IP" -m tcp --dport 80 -j KUBE-SVC-4N57TFCL4MD7ZTDA
+> -A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.252.143/32 -p tcp -m comment --comment "default/apache: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+> -A KUBE-SERVICES -d 10.83.252.143/32 -p tcp -m comment --comment "default/apache: cluster IP" -m tcp --dport 80 -j KUBE-SVC-5SZWMTHQB46VUA33
+> -A KUBE-SERVICES -d 130.211.80.214/32 -p tcp -m comment --comment "default/apache: loadbalancer IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+> -A KUBE-SERVICES -d 130.211.80.214/32 -p tcp -m comment --comment "default/apache: loadbalancer IP" -m tcp --dport 80 -j KUBE-SVC-5SZWMTHQB46VUA33
+65,68d88
+< -A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.240.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -j KUBE-MARK-MASQ
+< -A KUBE-SERVICES -d 10.83.240.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -j KUBE-SVC-TCOU7JCQXEZGVUNU
+< -A KUBE-SERVICES ! -s 10.80.0.0/14 -d 10.83.240.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -j KUBE-MARK-MASQ
+< -A KUBE-SERVICES -d 10.83.240.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -j KUBE-SVC-ERIFXISQEP7F7OF4
+69a90,91
+> -A KUBE-SVC-4N57TFCL4MD7ZTDA -m comment --comment "default/nginx:" -j KUBE-SEP-V2UJGDQORSRVNQDT
+> -A KUBE-SVC-5SZWMTHQB46VUA33 -m comment --comment "default/apache:" -j KUBE-SEP-M2ZJEPH4S7IJHIJP
+77c99
+< # Completed on Thu May 12 11:18:09 2016
+---
+> # Completed on Thu May 12 11:57:00 2016
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# 
+``` 
 
 
 
