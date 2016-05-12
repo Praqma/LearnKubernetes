@@ -8,7 +8,7 @@ This document discusses and explores the setup of two web servers running in a G
 Note: In this document, the dev computer is the one named **kworkhorse** .
 
 ## Prerequisits: 
-Install gcloud and kubectl on local computer, using instructions from this link: [](https://cloud.google.com/container-engine/docs/before-you-begin "https://cloud.google.com/container-engine/docs/before-you-begin") .
+Install gcloud and kubectl on local computer, using instructions from this link: [https://cloud.google.com/container-engine/docs/before-you-begin](https://cloud.google.com/container-engine/docs/before-you-begin) .
 
 Also:
 * Enable Billing for your account,
@@ -24,7 +24,7 @@ In case you already have the software installed, it is good idea to update the g
 ```
 
 ## Create new project in google cloud: 
-Create a new project on GCE, using: [](https://console.cloud.google.com/project "https://console.cloud.google.com/project")
+Create a new project on GCE, using: [https://console.cloud.google.com/project](https://console.cloud.google.com/project)
 
 Note: Project cannot be created through gcloud command. Though you can list projects using the gcloud command:
 
@@ -54,10 +54,10 @@ gcloud config set compute/zone europe-west1-b
 ``` 
 
 Notes: 
-* Compute Zones are found here: [](https://cloud.google.com/compute/docs/zones#available "https://cloud.google.com/compute/docs/zones#available")
-* Machine types are here: [](https://cloud.google.com/compute/docs/machine-types "https://cloud.google.com/compute/docs/machine-types") 
-* Container Engine (Kubernetes) (shows cluster and cluster size, container registry): [](https://console.cloud.google.com/kubernetes "https://console.cloud.google.com/kubernetes")
-* Compute Engine (shows VM Instances,CPU usage, Disks, Images, Zones, etc): [](https://console.cloud.google.com/compute "https://console.cloud.google.com/compute") 
+* Compute Zones are found here: [https://cloud.google.com/compute/docs/zones#available](https://cloud.google.com/compute/docs/zones#available)
+* Machine types are here: [https://cloud.google.com/compute/docs/machine-types](https://cloud.google.com/compute/docs/machine-types) 
+* Container Engine (Kubernetes) (shows cluster and cluster size, container registry): [https://console.cloud.google.com/kubernetes](https://console.cloud.google.com/kubernetes)
+* Compute Engine (shows VM Instances,CPU usage, Disks, Images, Zones, etc): [https://console.cloud.google.com/compute](https://console.cloud.google.com/compute) 
 
 
 ## View/verify gcloud defaults:
@@ -93,9 +93,9 @@ You will see the same information when you login to the GCE web UI.
 
 You now have one instance in this project - the worker node that you specified. The kubernetes master, which takes care of pod scheduling and runs the Kubernetes API server, is hosted by Container Engine.
 
-You can visit the Kubernetes web UI by visiting the master IP from the information from  `clusters list` command. [](https://MASTER_IP/ui "https://MASTER_IP/ui")
+You can visit the Kubernetes web UI by visiting the master IP from the information from  `clusters list` command. [https://MASTER_IP/ui](https://MASTER_IP/ui)
 
-Needs username and password! Where do I get it from? 
+Needs username and password! See below:
 
 ```
 [kamran@kworkhorse LearnKubernetes]$ gcloud container clusters get-credentials test-twowebservers
@@ -146,12 +146,13 @@ users:
     username: admin
 [kamran@kworkhorse LearnKubernetes]$ 
 ```
-
+There are several clusters in the output above, you can safely ignore the ones you are not concerned with.
 
 Now use the username and password displayed at the bottom of the output from above and login to **https://MASTER_IP/ui** . After logging in a freshly created cluster, you will see something like this:
 
+---
 ![](GCE-Kubernetes-Master-Login.png)
-
+---
 
 
 
