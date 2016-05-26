@@ -15,7 +15,7 @@ Overlay network: 172.16.0.0/12
 Service Addresses (assigned to pods ?) ( 10.254.0.0/16 ) (cpnfigured in API service config file on master)
 
 
-Diable SELinux.
+Disable SELinux.
 
 IMPORTANT: On Amazon, PLEASE allow related traffic in the Security group. 
 
