@@ -891,6 +891,29 @@ root@gke-test-twowebservers-default-pool-89515855-ey9l:~# ip addr show
 root@gke-test-twowebservers-default-pool-89515855-ey9l:~# 
 ```
 
+```
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# ping -c 2 10.80.0.7
+PING 10.80.0.7 (10.80.0.7) 56(84) bytes of data.
+64 bytes from 10.80.0.7: icmp_req=1 ttl=64 time=0.062 ms
+64 bytes from 10.80.0.7: icmp_req=2 ttl=64 time=0.060 ms
+
+--- 10.80.0.7 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 999ms
+rtt min/avg/max/mdev = 0.060/0.061/0.062/0.001 ms
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# ping -c 2 10.80.0.8
+PING 10.80.0.8 (10.80.0.8) 56(84) bytes of data.
+64 bytes from 10.80.0.8: icmp_req=1 ttl=64 time=0.063 ms
+64 bytes from 10.80.0.8: icmp_req=2 ttl=64 time=0.066 ms
+
+--- 10.80.0.8 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 999ms
+rtt min/avg/max/mdev = 0.063/0.064/0.066/0.008 ms
+root@gke-test-twowebservers-default-pool-89515855-ey9l:~# 
+```
+
+
+
+
 
 
 Routing table:
