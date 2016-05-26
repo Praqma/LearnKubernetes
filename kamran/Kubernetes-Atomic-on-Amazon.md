@@ -1,6 +1,9 @@
 Reference: http://www.projectatomic.io/docs/gettingstarted/
 
 
+Amazon AMI: ami-0bbf5c64
+M3.Medium : 3 instances.
+
 * Master: 52.58.169.227 (172.31.4.165)
 * Node1:  52.58.141.9   (172.31.4.166)
 * Node2:  52.58.112.190 (172.31.4.167)
@@ -15,6 +18,35 @@ Service Addresses (assigned to pods ?) ( 10.254.0.0/16 ) (cpnfigured in API serv
 Diable SELinux.
 
 IMPORTANT: On Amazon, PLEASE allow related traffic in the Security group. 
+
+
+## Overlay network:
+You can use Subnet calculator to have an idea about the IP address ranges for overlay network. [http://www.subnet-calculator.com/cidr.php](http://www.subnet-calculator.com/cidr.php)
+It is also possible to increase the number of bits in the subnet mask of the overlay network. 
+
+E.g. The overlay network 172.16.0.0/12 has the following qualities:
+
+Net CIDR notation: 172.16.0.0/12
+Mask bits: 12
+CIDR Mask: 255.240.0.0
+Maximum subnets: 1048576
+Maximum addresses: 1048574
+CIDR address range: 172.16.0.0 - 172.31.255.255
+
+You can see that it may cause problem by having a  conflict with the Amazon's subnet 172.31.4.x, which we are assigned by Amazon for these nodes.
+
+
+Lets take another example of the overlay network 172.16.0.0/16  , this network has the following properties:
+
+NET CIDR notation: 172.16.0.0/16
+Mask bits: 16
+CIDR Mask: 255.255.0.0
+Maximum subnets: 65536
+Maximum Addresses: 65534
+CIDR adderess range: 172.16.0.0 - 172.16.255.255 
+
+
+
 
 
 
