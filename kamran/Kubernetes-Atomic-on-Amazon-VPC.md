@@ -32,7 +32,7 @@ Note: I use EU central / Frankfurt. Your AMI may be different if you are in a di
 
 Once you have your AMI ID, you create three EC2 instances using this AMI. Go ahead and use the Launce Instance button to start the wizard which will take you through the steps to create these instances.
 
-![AWS-Instance-Creation-with-VPC](AWS-Instance-Creation-with-VPC)
+![images/AWS-Instance-Creation-with-VPC.png](images/AWS-Instance-Creation-with-VPC.png)
 
 When you reach the security group tab/section of the Instance creation wizard, make sure that you create a new Security Group and give it a proper name, such as SG-ServerNet. Allow necessary traffic by setting up rules in this security zone. (You can always edit the rules of the security group at a later time). I have setup All Traffic from 0.0.0.0/0 allowed to come in to this security group. This is just a lab setup , which will be deleted in few hours. You can tighten these as you desire. I will probably add some more ports at a later stage.
 

@@ -15,11 +15,11 @@ fed-node1: 192.168.124.51
 Note: Fedora now has a webUI - called Cockpit - installed by default as part of server installation. It's admin console can be access by visiting: https://IPofFedoraHost:9090 . Use the credentials of user root to login.
 
 ### Screnshots:
-![Info-about-Fedora-Admin-webUI-on-terminal.png](Info-about-Fedora-Admin-webUI-on-terminal.png)
+![images/Info-about-Fedora-Admin-webUI-on-terminal.png](images/Info-about-Fedora-Admin-webUI-on-terminal.png)
 
-![Fedora-Admin-webUI-1](Fedora-Admin-webUI-1.png)
+![images/Fedora-Admin-webUI-1](images/Fedora-Admin-webUI-1.png)
 
-![Fedora-Admin-webUI-2](Fedora-Admin-webUI-2.png)
+![images/Fedora-Admin-webUI-2](images/Fedora-Admin-webUI-2.png)
 
 
 ## Package installation:

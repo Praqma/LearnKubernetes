@@ -15,9 +15,9 @@ Also:
 * Enable Container Engine API
 * Create authentication keys:
 ----
-![](GCE-Credentials-1.png "GCE-Credentials-1.png")
+![](images/GCE-Credentials-1.png "GCE-Credentials-1.png")
 ----
-![](GCE-Credentials-2.png "GCE-Credentials-2.png")
+![](images/GCE-Credentials-2.png "GCE-Credentials-2.png")
 ----
 
 In case you already have the software installed, it is good idea to update the gcloud components. 
@@ -90,7 +90,7 @@ test-twowebservers  europe-west1-b  1.2.4           23.251.134.151  g1-small    
 ``` 
 
 You will see the same information when you login to the GCE web UI.
-![](GCE-Cluster.png)
+![](images/GCE-Cluster.png)
 
 
 You now have one instance in this project - the worker node that you specified. The kubernetes master, which takes care of pod scheduling and runs the Kubernetes API server, is hosted by Container Engine.
@@ -173,7 +173,7 @@ There are several clusters in the output above, you can safely ignore the ones y
 Now use the username and password displayed at the bottom of the output from above and login to **https://MASTER_IP/ui** . After logging in a freshly created cluster, you will see something like this:
 
 ----
-![](GCE-Kubernetes-Master-Login.png)
+![](images/GCE-Kubernetes-Master-Login.png)
 ----
 
 Note: There is also a describe command which gives you a rather detailed information about the cluster, including the username and password:
