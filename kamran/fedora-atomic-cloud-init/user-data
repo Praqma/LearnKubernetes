@@ -1,0 +1,8 @@
+#cloud-config
+password: atomic
+ssh_pwauth: True
+chpasswd: { expire: False }
+
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAx+5TIvYxBryI9d3DjvAeDv4q8xycNbXAAmfOIwhXL0D7So67MpmnQavwHaE/dVsGzP/9XMcidOYl7xBK0aN0fozApThWHaeKpWuJC2w4qE0ijD6tCAbnA7/Wach1rEmGVtRKo5B5lpPXuTedoixM/St/T46wnLFIwsDdFOTMyk9QHRtQ+uJAKv/lkuimMZjDRWeJE5ggwR4SNsc306R9ArnDBdj9HJ3xeUb5rqiBCe1qV3a5k8MpjsaIgG8KPx5dvXRhOTFE4ueh+2wLMy6ydy68NU5kltBtxqBA8CYbEyYmUL/cqRdx6ZVkL8AT5Pv44e2JRnN3kE70HJADfoDX5w== kaz@parqma.net
+
