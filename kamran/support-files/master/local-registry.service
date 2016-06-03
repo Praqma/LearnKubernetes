@@ -1,0 +1,18 @@
+# Place this file in /etc/systemd/system/ on Master.
+# After creating it, run:-
+# sudo systemctl daemon-reload ;  sudo systemctl enable local-registry ;  sudo systemctl restart local-registry
+ 
+[Unit]
+Description=Local Docker Mirror registry cache
+Requires=docker.service
+After=docker.service
+
+[Service]
+Restart=on-failure
+RestartSec=10
+ExecStart=/usr/bin/docker start -a %p
+ExecStop=-/usr/bin/docker stop -t 2 %p
+
+[Install]
+WantedBy=multi-user.target
+

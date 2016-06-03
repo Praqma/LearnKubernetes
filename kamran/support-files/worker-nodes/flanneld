@@ -1,0 +1,2 @@
+FLANNEL_ETCD="http://192.168.124.10:2379"
+FLANNEL_ETCD_KEY="/atomic01/network"

@@ -1,0 +1,4 @@
+KUBELET_ADDRESS="--address=NODEIP"
+KUBELET_HOSTNAME="--hostname-override=NODEIP"
+KUBELET_API_SERVER="--api-servers=http://MASTERIP:8080"
+KUBELET_ARGS=""

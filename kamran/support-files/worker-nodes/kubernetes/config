@@ -1,0 +1,4 @@
+KUBE_LOGTOSTDERR="--logtostderr=true"
+KUBE_LOG_LEVEL="--v=0"
+KUBE_ALLOW_PRIV="--allow-privileged=false"
+KUBE_MASTER="--master=http://MASTERIP:8080"

@@ -69,11 +69,60 @@ Anyway, moving on.
 * Assign proper hostname (kube-master.example.com)
 * Assign proper IP (192.168.124.10)
 * Disable SELinux (/etc/selinux/config)
+* Setup SSH key in root user's authorized_keys file. (This is not necessary if you plan to setup the cluster by hand). Also not necessary if you are happy to include a "sudo" with every command you want to execute on the cluster nodes.
+
+```
+[fedora@kube-master ~]$ sudo cp /home/fedora/.ssh/authorized_keys /root/.ssh/authorized_keys
+```
 * Update OS (# rpm-ostree upgrade)
 * Optional: Change boot order in KVM. (Not necessary). Note: DO NOT remove CDROM device. (This will result in the node taking too long to boot - at all !)
 * Reboot
 
 
-# Setup Kubernetes related services on Master and worker nodes
 
+
+# Setup Kubernetes related services on Master and worker nodes
+Reference: [http://www.projectatomic.io/docs/gettingstarted/](http://www.projectatomic.io/docs/gettingstarted/)
+Also: [https://github.com/Praqma/LearnKubernetes/blob/master/kamran/Kubernetes-Atomic-on-Amazon-VPC.md](https://github.com/Praqma/LearnKubernetes/blob/master/kamran/Kubernetes-Atomic-on-Amazon-VPC.md)
+
+
+## Create Local Docker Registry on Master:
+TODO: Fill up here from the other Howto.
+
+
+# Setup etcd on Master
+Todo: fill up from other howto.
+
+## Setup Kubernetes sub-components on master:
+
+* config
+* apiserver
+
+
+## Enable and start the Kubernetes services on Master
+
+## Configure flanel overlay network on Master
+
+## Configure SkyDNS on Master
+
+
+# Configure Worker nodes
+## Configuring Docker to use the cluster registry cache
+
+
+## Configuring Docker to use the Flannel overlay
+
+## Configure Docker to use DNS too
+
+## enable services on nodes:
+
+
+Result:
+```
+[fedora@kube-master ~]$ sudo kubectl get nodes
+NAME             STATUS    AGE
+192.168.124.11   Ready     1m
+192.168.124.12   Ready     1m
+[fedora@kube-master ~]$ 
+```
 
