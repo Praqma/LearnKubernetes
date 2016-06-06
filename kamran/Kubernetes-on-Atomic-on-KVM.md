@@ -600,11 +600,165 @@ root@my-nginx-3800858182-3fs4y:/#
 ```
 
 
+## Problem running skydns and solution:
+
+SkyDNS is not working properly. So troubleshooting is as follows:
+
+I see the following:
+
+
+First, the state of RC, SVC and pods:
+
+
+```
+[fedora@kube-master ~]$ kubectl logs  kube-dns-v11-7gjrz kube2sky  --namespace=kube-system 
+I0606 14:42:29.609875       1 kube2sky.go:462] Etcd server found: http://127.0.0.1:4001
+I0606 14:42:30.691607       1 kube2sky.go:529] Using http://localhost:8080 for kubernetes master
+I0606 14:42:30.692206       1 kube2sky.go:530] Using kubernetes API <nil>
+I0606 14:42:30.692584       1 kube2sky.go:598] Waiting for service: default/kubernetes
+I0606 14:42:30.693686       1 kube2sky.go:604] Ignoring error while waiting for service default/kubernetes: yaml: mapping values are not allowed in this context. Sleeping 1s before retrying.
+```
+
+May be the container is expecting kubernetes master to be on localhost, whereas it is on 192.168.124.10 ! (I was right! See below!) 
 
 
 
+I modified the kube2sky section in dns-addon-coreos.yaml by adding `--kube-master-url=http://192.168.124.10:8080` as an additional **args**.
+
+```
+[snipped]
+. . . 
+      - name: kube2sky
+        image: gcr.io/google_containers/kube2sky:1.14
+        resources:
+          limits:
+            cpu: 100m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        args:
+        # command = "/kube2sky"
+        - --domain=cluster.local
+        - --kube-master-url=http://192.168.124.10:8080
+. . . 
+[snipped]
+```
 
 
+, and I got the following in logs:
+
+```
+[fedora@kube-master ~]$ kubectl create -f dns-addon-coreos.yaml 
+service "kube-dns" created
+replicationcontroller "kube-dns-v11" created
+[fedora@kube-master ~]$ 
+
+[fedora@kube-master ~]$ kubectl get pods --namespace=kube-system
+NAME                 READY     STATUS    RESTARTS   AGE
+kube-dns-v11-5ndxj   4/4       Running   0          2m
+[fedora@kube-master ~]$ 
+
+
+[fedora@kube-master ~]$ kubectl logs kube-dns-v11-5ndxj kube2sky --namespace=kube-system
+I0606 19:16:35.170516       1 kube2sky.go:462] Etcd server found: http://127.0.0.1:4001
+I0606 19:16:36.172404       1 kube2sky.go:529] Using http://192.168.124.10:8080 for kubernetes master
+I0606 19:16:36.172870       1 kube2sky.go:530] Using kubernetes API v1
+I0606 19:16:36.173259       1 kube2sky.go:598] Waiting for service: default/kubernetes
+I0606 19:16:36.227287       1 kube2sky.go:660] Successfully added DNS record for Kubernetes service.
+[fedora@kube-master ~]$ 
+``` 
+Looks great!
+
+Lets test:
+Reference: [https://github.com/kubernetes/kubernetes/tree/release-1.2/cluster/addons/dns#how-do-i-test-if-it-is-working](https://github.com/kubernetes/kubernetes/tree/release-1.2/cluster/addons/dns#how-do-i-test-if-it-is-working)
+```
+[fedora@kube-master ~]$ kubectl create -f busybox.yaml 
+pod "busybox" created
+[fedora@kube-master ~]$ 
+
+[fedora@kube-master ~]$ kubectl get pods
+NAME      READY     STATUS    RESTARTS   AGE
+busybox   1/1       Running   0          4m
+[fedora@kube-master ~]$ 
+```
+
+```
+[fedora@kube-master ~]$ kubectl exec busybox -i -t  -- sh
+
+/ # nslookup yahoo.com
+Server:    10.254.0.10
+Address 1: 10.254.0.10
+
+Name:      yahoo.com
+Address 1: 2001:4998:58:c02::a9 ir1.fp.vip.bf1.yahoo.com
+Address 2: 2001:4998:c:a06::2:4008 ir1.fp.vip.gq1.yahoo.com
+Address 3: 2001:4998:44:204::a7 ir1.fp.vip.ne1.yahoo.com
+Address 4: 206.190.36.45 ir1.fp.vip.gq1.yahoo.com
+Address 5: 98.138.253.109 ir1.fp.vip.ne1.yahoo.com
+Address 6: 98.139.183.24 ir2.fp.vip.bf1.yahoo.com
+/ #
+```
+
+This time the reponse is instantaneous. Still it cannot resolve kubernetes!
+
+```
+/ # nslookup kubernetes
+Server:    10.254.0.10
+Address 1: 10.254.0.10
+
+nslookup: can't resolve 'kubernetes'
+/ # nslookup kubernetes.default
+Server:    10.254.0.10
+Address 1: 10.254.0.10
+
+nslookup: can't resolve 'kubernetes.default'
+/ # nslookup kubernetes.cluster.local
+Server:    10.254.0.10
+Address 1: 10.254.0.10
+
+nslookup: can't resolve 'kubernetes.cluster.local'
+/ # 
+```
+
+SkyDNS has something in the logs:
+```
+[fedora@kube-master ~]$ kubectl logs kube-dns-v11-5ndxj skydns --namespace=kube-system
+2016/06/06 19:16:36 skydns: falling back to default configuration, could not read from etcd: 100: Key not found (/skydns/config) [15]
+2016/06/06 19:16:36 skydns: ready for queries on cluster.local. for tcp://0.0.0.0:53 [rcache 0]
+2016/06/06 19:16:36 skydns: ready for queries on cluster.local. for udp://0.0.0.0:53 [rcache 0]
+[fedora@kube-master ~]$ 
+```
+
+Also the Healthz container:
+
+```
+2016/06/06 19:49:33 Worker running nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+2016/06/06 19:49:35 Worker running nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+2016/06/06 19:49:37 Worker running nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+2016/06/06 19:49:39 Worker running nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+2016/06/06 19:49:41 Worker running nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+2016/06/06 19:49:42 Client ip 172.16.18.1:58812 requesting /healthz probe servicing cmd nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+2016/06/06 19:49:43 Worker running nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+2016/06/06 19:49:45 Worker running nslookup kubernetes.default.svc.cluster.local 127.0.0.1 >/dev/null
+[fedora@kube-master ~]$ 
+``` 
 
 
 # Configure Worker nodes
