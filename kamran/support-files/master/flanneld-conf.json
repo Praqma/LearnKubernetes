@@ -1,5 +1,5 @@
 {
-  "Network": "172.16.0.0/12",
+  "Network": "FLANNEL_NETWORK",
   "SubnetLen": 24,
   "Backend": {
     "Type": "vxlan"

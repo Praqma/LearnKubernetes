@@ -1,4 +1,4 @@
 # Put this file in /etc/sysconfig/
-OPTIONS='--registry-mirror=http://192.168.124.10:5000 --log-driver=journald'
+OPTIONS='--registry-mirror=http://MASTERIP:5000 --log-driver=journald'
 DOCKER_CERT_PATH=/etc/docker
 

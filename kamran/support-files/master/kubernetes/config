@@ -1,6 +1,6 @@
 KUBE_LOGTOSTDERR="--logtostderr=true"
 KUBE_LOG_LEVEL="--v=0"
 KUBE_ALLOW_PRIV="--allow-privileged=false"
-KUBE_MASTER="--master=http://192.168.124.10:8080"
-KUBE_ETCD_SERVERS="--etcd_servers=http://192.168.124.10:2379"
+KUBE_MASTER="--master=http://MASTERIP:8080"
+KUBE_ETCD_SERVERS="--etcd_servers=http://MASTERIP:2379"
 
