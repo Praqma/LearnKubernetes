@@ -123,6 +123,16 @@ Please see [SettingUp-SkyDNS.md](SettingUp-SkyDNS.md)
 
 
 Result:
+
+```
+[fedora@kube-master ~]$ kubectl get cs
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-0               Healthy   {"health": "true"}   
+[fedora@kube-master ~]$ 
+```
+
 ```
 [fedora@kube-master ~]$ sudo kubectl get nodes
 NAME             STATUS    AGE
@@ -130,7 +140,6 @@ NAME             STATUS    AGE
 192.168.124.12   Ready     1m
 [fedora@kube-master ~]$ 
 ```
-
 
 
 ---- 
