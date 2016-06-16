@@ -753,7 +753,9 @@ Address 1: 10.254.57.140
 ```
 
 
-Why the busybox container does not have the IP of the name server in it's resolv.conf file? kubelet is supposed to do that for all containers.
+Q- Why the busybox container does not have the IP of the name server in it's resolv.conf file? kubelet is supposed to do that for all containers. 
+
+A- This is happening because I rebuilt the worker nodes, and the custom setting for kubelet (which injects correct DNS into containers) is not there anymore. I think I have to make it part of my template files now.
 
 ```
 [fedora@kube-master ~]$ kubectl exec busybox -- cat /etc/resolv.conf
@@ -765,6 +767,96 @@ options ndots:5
 
 
 If this is fixed DNS will work properly - God willing. 
+
+
+So I fix the kubelet service on all worker nodes and restart the kubelet service on all nodes.
+
+(Only one node is shown here, you do this step on all nodes).
+
+```
+[fedora@kube-node1 ~]$ sudo -i
+-bash-4.3# vi /etc/kubernetes/kubelet 
+KUBELET_ADDRESS="--address=192.168.124.11"
+KUBELET_HOSTNAME="--hostname-override=192.168.124.11"
+KUBELET_API_SERVER="--api-servers=http://192.168.124.10:8080"
+# KUBELET_ARGS=""
+KUBELET_ARGS="--cluster-dns=10.254.0.10  --cluster-domain=cluster.local"
+
+
+-bash-4.3# service kubelet restart
+
+-bash-4.3# service kubelet status -l
+Redirecting to /bin/systemctl status  -l kubelet.service
+● kubelet.service - Kubernetes Kubelet Server
+   Loaded: loaded (/usr/lib/systemd/system/kubelet.service; enabled; vendor preset: disabled)
+   Active: active (running) since Fri 2016-06-10 14:32:32 UTC; 11s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 3914 (kubelet)
+   Memory: 13.6M
+      CPU: 473ms
+   CGroup: /system.slice/kubelet.service
+           ├─3914 /usr/bin/kubelet --logtostderr=true --v=0 --api-servers=http://192.168.124.10:8080 --address=192.168.124.11 --hostname-override=192.168.124.11 --allow-privileged=false --cluster-dns=10.254.0.10 --cluster-domain=cluster.local
+           └─3940 journalctl -k -f
+
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.069245    3914 kubelet.go:2372] Starting kubelet main sync loop.
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.069503    3914 kubelet.go:2381] skipping pod synchronization - [container runtime is down]
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.070153    3914 server.go:109] Starting to listen on 192.168.124.11:10250
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.288511    3914 kubelet.go:1150] Node 192.168.124.11 was previously registered
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.372066    3914 factory.go:233] Registering Docker factory
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.372890    3914 factory.go:97] Registering Raw factory
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.500811    3914 manager.go:1003] Started watching for new ooms in manager
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.504548    3914 oomparser.go:182] oomparser using systemd
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.510507    3914 manager.go:256] Starting recovery of all containers
+Jun 10 14:32:35 kube-node1.example.com kubelet[3914]: I0610 14:32:35.621128    3914 manager.go:261] Recovery completed
+-bash-4.3# 
+```
+
+Then I restart the busybox container, which I am using to test the DNS. 
+
+```
+[fedora@kube-master ~]$ kubectl delete pod busybox 
+pod "busybox" deleted
+[fedora@kube-master ~]$ 
+
+[fedora@kube-master ~]$ kubectl create -f busybox.yaml 
+pod "busybox" created
+
+[fedora@kube-master ~]$ kubectl get pods
+NAME                        READY     STATUS    RESTARTS   AGE
+busybox                     1/1       Running   0          10s
+[fedora@kube-master ~]$ 
+```
+
+
+The skydns only resolves the name locally, the pods / containers are not able to resolve the name kubernetes.default.svc.cluster.local even though their resolv.conf points to correct cluster DNS IP address. This is becoming stange!
+
+
+```
+[fedora@kube-master ~]$  kubectl --namespace=kube-system  exec -ti  kube-dns-v11-iy7yr -c skydns sh 
+/ # nslookup my-nginx
+Server:    127.0.0.1
+Address 1: 127.0.0.1 localhost
+
+nslookup: can't resolve 'my-nginx'
+/ # nslookup my-nginx.default.svc.cluster.local
+Server:    127.0.0.1
+Address 1: 127.0.0.1 localhost
+
+Name:      my-nginx.default.svc.cluster.local
+Address 1: 10.254.70.25
+/ # nslookup yahoo.com
+Server:    127.0.0.1
+Address 1: 127.0.0.1 localhost
+
+Name:      yahoo.com
+Address 1: 206.190.36.45 ir1.fp.vip.gq1.yahoo.com
+Address 2: 98.138.253.109 ir1.fp.vip.ne1.yahoo.com
+Address 3: 98.139.183.24 ir2.fp.vip.bf1.yahoo.com
+/ # 
+```
+
+
+May be the sky DNS container is not listening on the cluster IP or All IP addresses?
 
 
 
