@@ -3679,11 +3679,140 @@ Installation successful!
 ```
 
 
+
 # Summary from the installation steps / major points noted:
 * By default this setup installs one master and one worker node.
 * The script detects the presence of vagrant-libvirt plugin on the OS, and goes on and uses libvirt as the default VM provider.
 * The vagrant machines are based on Fedora 23
 *  ... more later
+
+
+# Very basic cluster status:
+
+```
+[root@kworkhorse ~]# kubectl get cs
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-1               Healthy   {"health": "true"}   
+etcd-0               Healthy   {"health": "true"}   
+```
+
+There are no pods in the default namespace yet, as this is a fresh cluster. Lets check the kube-system namespace. I am most interested in DNS.
+
+```
+[root@kworkhorse ~]# kubectl get pods --namespace=kube-system
+NAME                                   READY     STATUS    RESTARTS   AGE
+heapster-v1.0.2-1820217487-2heaa       4/4       Running   0          28m
+kube-dns-v11-uzgn2                     4/4       Running   0          28m
+kube-proxy-kubernetes-node-1           1/1       Running   0          24m
+kubernetes-dashboard-v1.0.1-zompq      1/1       Running   0          28m
+monitoring-influxdb-grafana-v3-1z34g   0/2       Pending   0          28m
+[root@kworkhorse ~]#
+``` 
+
+OK! DNS seems to be running, but the monitoring is failing. Lets try to see:
+
+
+
+```
+[root@kworkhorse ~]# kubectl get events  --namespace=kube-system
+FIRSTSEEN   LASTSEEN   COUNT     NAME                                   KIND                    SUBOBJECT                               TYPE      REASON              SOURCE                        MESSAGE
+30m         26m        18        heapster-v1.0.2-1820217487-2heaa       Pod                                                             Warning   FailedScheduling    {default-scheduler }          no nodes available to schedule pods
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                                                             Normal    Scheduled           {default-scheduler }          Successfully assigned heapster-v1.0.2-1820217487-2heaa to kubernetes-node-1
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster}               Normal    Pulling             {kubelet kubernetes-node-1}   pulling image "gcr.io/google_containers/heapster:v1.0.2"
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster}               Normal    Pulled              {kubelet kubernetes-node-1}   Successfully pulled image "gcr.io/google_containers/heapster:v1.0.2"
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster}               Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id ebd68212626a
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster}               Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id ebd68212626a
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{eventer}                Normal    Pulled              {kubelet kubernetes-node-1}   Container image "gcr.io/google_containers/heapster:v1.0.2" already present on machine
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{eventer}                Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id c3f2e2796826
+26m         26m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{eventer}                Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id c3f2e2796826
+25m         25m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster-nanny}         Normal    Pulling             {kubelet kubernetes-node-1}   pulling image "gcr.io/google_containers/addon-resizer:1.0"
+25m         25m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster-nanny}         Normal    Pulled              {kubelet kubernetes-node-1}   Successfully pulled image "gcr.io/google_containers/addon-resizer:1.0"
+25m         25m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster-nanny}         Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id 0de8b7f26b39
+25m         25m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{heapster-nanny}         Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id 0de8b7f26b39
+25m         25m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{eventer-nanny}          Normal    Pulled              {kubelet kubernetes-node-1}   Container image "gcr.io/google_containers/addon-resizer:1.0" already present on machine
+25m         25m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{eventer-nanny}          Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id 48ddf5b2ecb2
+25m         25m        1         heapster-v1.0.2-1820217487-2heaa       Pod                     spec.containers{eventer-nanny}          Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id 48ddf5b2ecb2
+30m         30m        1         heapster-v1.0.2-1820217487             ReplicaSet                                                      Normal    SuccessfulCreate    {replicaset-controller }      Created pod: heapster-v1.0.2-1820217487-2heaa
+30m         30m        1         heapster-v1.0.2                        Deployment                                                      Normal    ScalingReplicaSet   {deployment-controller }      Scaled up replica set heapster-v1.0.2-1820217487 to 1
+30m         26m        18        kube-dns-v11-uzgn2                     Pod                                                             Warning   FailedScheduling    {default-scheduler }          no nodes available to schedule pods
+26m         26m        1         kube-dns-v11-uzgn2                     Pod                                                             Normal    Scheduled           {default-scheduler }          Successfully assigned kube-dns-v11-uzgn2 to kubernetes-node-1
+26m         26m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{etcd}                   Normal    Pulling             {kubelet kubernetes-node-1}   pulling image "gcr.io/google_containers/etcd-amd64:2.2.1"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{etcd}                   Normal    Pulled              {kubelet kubernetes-node-1}   Successfully pulled image "gcr.io/google_containers/etcd-amd64:2.2.1"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{etcd}                   Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id 6ccb84732935
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{etcd}                   Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id 6ccb84732935
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{kube2sky}               Normal    Pulling             {kubelet kubernetes-node-1}   pulling image "gcr.io/google_containers/kube2sky:1.14"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{kube2sky}               Normal    Pulled              {kubelet kubernetes-node-1}   Successfully pulled image "gcr.io/google_containers/kube2sky:1.14"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{kube2sky}               Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id c2f4b26ddcd4
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{kube2sky}               Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id c2f4b26ddcd4
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{skydns}                 Normal    Pulling             {kubelet kubernetes-node-1}   pulling image "gcr.io/google_containers/skydns:2015-10-13-8c72f8c"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{skydns}                 Normal    Pulled              {kubelet kubernetes-node-1}   Successfully pulled image "gcr.io/google_containers/skydns:2015-10-13-8c72f8c"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{skydns}                 Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id 0c5ddbd9946c
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{skydns}                 Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id 0c5ddbd9946c
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{healthz}                Normal    Pulling             {kubelet kubernetes-node-1}   pulling image "gcr.io/google_containers/exechealthz:1.0"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{healthz}                Normal    Pulled              {kubelet kubernetes-node-1}   Successfully pulled image "gcr.io/google_containers/exechealthz:1.0"
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{healthz}                Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id 5d94353d1806
+25m         25m        1         kube-dns-v11-uzgn2                     Pod                     spec.containers{healthz}                Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id 5d94353d1806
+30m         30m        1         kube-dns-v11                           ReplicationController                                           Normal    SuccessfulCreate    {replication-controller }     Created pod: kube-dns-v11-uzgn2
+26m         26m        1         kube-proxy-kubernetes-node-1           Pod                     spec.containers{kube-proxy}             Normal    Pulled              {kubelet kubernetes-node-1}   Container image "gcr.io/google_containers/kube-proxy:c126c6dbe73c9e7db8b835f2dd6b8f8e" already present on machine
+26m         26m        1         kube-proxy-kubernetes-node-1           Pod                     spec.containers{kube-proxy}             Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id 3183c995e84a
+26m         26m        1         kube-proxy-kubernetes-node-1           Pod                     spec.containers{kube-proxy}             Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id 3183c995e84a
+30m         26m        18        kubernetes-dashboard-v1.0.1-zompq      Pod                                                             Warning   FailedScheduling    {default-scheduler }          no nodes available to schedule pods
+26m         26m        1         kubernetes-dashboard-v1.0.1-zompq      Pod                                                             Normal    Scheduled           {default-scheduler }          Successfully assigned kubernetes-dashboard-v1.0.1-zompq to kubernetes-node-1
+26m         26m        1         kubernetes-dashboard-v1.0.1-zompq      Pod                     spec.containers{kubernetes-dashboard}   Normal    Pulling             {kubelet kubernetes-node-1}   pulling image "gcr.io/google_containers/kubernetes-dashboard-amd64:v1.0.1"
+26m         26m        1         kubernetes-dashboard-v1.0.1-zompq      Pod                     spec.containers{kubernetes-dashboard}   Normal    Pulled              {kubelet kubernetes-node-1}   Successfully pulled image "gcr.io/google_containers/kubernetes-dashboard-amd64:v1.0.1"
+26m         26m        1         kubernetes-dashboard-v1.0.1-zompq      Pod                     spec.containers{kubernetes-dashboard}   Normal    Created             {kubelet kubernetes-node-1}   Created container with docker id 422253933b0a
+26m         26m        1         kubernetes-dashboard-v1.0.1-zompq      Pod                     spec.containers{kubernetes-dashboard}   Normal    Started             {kubelet kubernetes-node-1}   Started container with docker id 422253933b0a
+30m         30m        1         kubernetes-dashboard-v1.0.1            ReplicationController                                           Normal    SuccessfulCreate    {replication-controller }     Created pod: kubernetes-dashboard-v1.0.1-zompq
+30m         26m        18        monitoring-influxdb-grafana-v3-1z34g   Pod                                                             Warning   FailedScheduling    {default-scheduler }          no nodes available to schedule pods
+26m         26m        1         monitoring-influxdb-grafana-v3-1z34g   Pod                                                             Warning   FailedScheduling    {default-scheduler }          pod (monitoring-influxdb-grafana-v3-1z34g) failed to fit in any node
+fit failure on node (kubernetes-node-1): Node didn't have enough resource: Memory, requested: 629145600, used: 681574400, capacity: 1041473536
+
+26m       2s        88        monitoring-influxdb-grafana-v3-1z34g   Pod                 Warning   FailedScheduling   {default-scheduler }   pod (monitoring-influxdb-grafana-v3-1z34g) failed to fit in any node
+fit failure on node (kubernetes-node-1): Node didn't have enough resource: Memory, requested: 629145600, used: 859832320, capacity: 1041473536
+
+30m       30m       1         monitoring-influxdb-grafana-v3   ReplicationController             Normal    SuccessfulCreate   {replication-controller }   Created pod: monitoring-influxdb-grafana-v3-1z34g
+[root@kworkhorse ~]#
+```
+
+```
+[root@kworkhorse ~]# kubectl describe  pods --namespace=kube-system | grep Node:
+Node:		kubernetes-node-1/10.245.1.3
+Node:		kubernetes-node-1/10.245.1.3
+Node:		kubernetes-node-1/10.245.1.3
+Node:		kubernetes-node-1/10.245.1.3
+Node:		/
+[root@kworkhorse ~]#
+``` 
+
+It seems that the node (node-1) doesn't have enough resources. On manual inspection on VMs created in libvirt (by this kubernetes setup script), I see that the master node has been given 1280 MB of RAM, and node-1 has 1024 MB of RAM . I will increase the amount of RAM on node (to 2 GB), and see if the pods start up automatically.
+
+It seems to work! After rebooting node-1, it has started to create the containers!
+
+```
+[root@kworkhorse ~]# kubectl get pods --namespace=kube-system
+NAME                                   READY     STATUS              RESTARTS   AGE
+heapster-v1.0.2-1820217487-2heaa       4/4       Running             8          46m
+kube-dns-v11-uzgn2                     4/4       Running             8          46m
+kube-proxy-kubernetes-node-1           1/1       Running             2          42m
+kubernetes-dashboard-v1.0.1-zompq      1/1       Running             2          46m
+monitoring-influxdb-grafana-v3-1z34g   0/2       ContainerCreating   0          46m
+[root@kworkhorse ~]# 
+```
+
+And, after a couple of minutes, everything is in running state:
+```
+[root@kworkhorse ~]# kubectl get pods --namespace=kube-system
+NAME                                   READY     STATUS    RESTARTS   AGE
+heapster-v1.0.2-1820217487-2heaa       4/4       Running   8          48m
+kube-dns-v11-uzgn2                     4/4       Running   8          48m
+kube-proxy-kubernetes-node-1           1/1       Running   2          44m
+kubernetes-dashboard-v1.0.1-zompq      1/1       Running   2          48m
+monitoring-influxdb-grafana-v3-1z34g   2/2       Running   0          48m
+[root@kworkhorse ~]#
+```
+
 
 
 # Screenshots from the Virtual Machine Manager:
