@@ -335,13 +335,40 @@ nginx        10.247.177.156   10.245.1.142   80/TCP    3s
 
 ## Here is why DNAT does not work in this situation:
 
-When my work computer (kworkhorse) is able to reach the LB 192.168.121.201. When my work computer tries to access 192.168.121.201 for port 80, the iptables rules on LB changes the destination address of my packet to 10.246.92.8 , which is the IP of the pod. As soon as the packet's target address is changed, it is kind of lost, because my tech computer does not know how to reach 10.246.92.8 . So any rewritten packets with their destination addresses changed, originating from my computer are lost. They don't know where to go!
+DNAT is normally used on gateway routers. e.g. Consider situation when you have a web server on a private IP scheme behind a router (such as a home router). Your router has a public IP on it's public interface, but on the inside interface, it has private IPs, and one of the IPs is your web server. You setup DNAT rule on the router that any traffic coming in for port 80 should be redirected towards the webserver on the private IP. The webserver responds with a web page and the traffic goes out from the same router again.
 
-One way may be to add the route to flannel network on my local computer and setup 192.168.121.201 as it's gateway.  But that will not be a scalable solution. We can't add routes to all of our clients. That would be really silly. 
+Consider a client computer somewhere on the internet having an IP address (123.45.67.89) tries to access this website of yours through the public IP of your router, which is of-course resolved from the DNS such as www.example.com. The sees that the packet has arrived on it's public interface and is destined for port 80. The router sees that it has a DNAT rule for such situation and applies that to the incoming packet. The router changes the destination IP address of the incoming packet (destined for port 80), and forwards the modified packet to the webserver on the private network. Note that the source address of this packet is still that of the client on the internet, i.e. 123.45.67.89. The webserver sees that a packet has arrived seeking a web responce. The web server sends back a responce by using the source address as the destination address. Note that this packet now has the client's IP (123.45.67.89) as destination and the web server's private IP as the source. And, since it has the client's IP in it's destination, it will try to go out the default gateway of this private network, which fortunately is the gateway router itself. The gateway router remembers that it sent out such a DNAT packet earlier, and when it sees this packet coming back, it sort of un-DNATs it. This means that the reponce packet's source will now be replaced with the gateway/router's IP address and the packet will be sent back to the client (123.45.67.89) , and everyone is happy!.
 
 
-So may be we can use a proxy on the LB! We reach the LB, and LB reaches out to the pods, gets the data and brings it back to us!
+(Phew! That is a lot of explanation!).
 
+
+In my solution above, I have setup a load balancer "inside" the kubernetes network, and using that as a DNAT jump-box so to speak. When I send out a request from my work computer for the IP of load balancer on port 80, it sees that it should DNAT it to the IP address of the nginx pod. So it rewrites the destination IP address with the (private) IP address of the pod, and sends it out towards the pod. The pod only knows about one and only one private IP address it is connected to. So when it sees such a packet, it tries to respond to it and a packet is sent back using the client IP address as the destination and the pod's IP as the source IP. Since the pod can only send a packet out using it's default gateway, it sends it towards it's default gateway which is the flannel network. The flannel network's default gateway doesn't know about this packet. It does not remember sending such a packet in the first place, so this packet is dropped. At least that is the theory!
+
+Now in our situation, I am trying to reach 192.168.121.201 on port 80 through my (client) IP address 192.168.121.1  . The nginx pod should at least register/show a packet arriving for port 80. 
+
+A successful curl directly from the LB shows packets in tcpdump on the nginx pod.
+
+```
+root@nginx-2040093540-xu5va:/# tcpdump -n  -i any 'tcp dst port 80'
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on any, link-type LINUX_SLL (Linux cooked), capture size 262144 bytes
+20:52:43.055143 IP 10.246.90.0.32869 > 10.246.92.8.80: Flags [S], seq 3628377688, win 28640, options [mss 1432,sackOK,TS val 24237346 ecr 0,nop,wscale 6], length 0
+20:52:43.055513 IP 10.246.90.0.32869 > 10.246.92.8.80: Flags [.], ack 2398702889, win 448, options [nop,nop,TS val 24237347 ecr 41170222], length 0
+20:52:43.055674 IP 10.246.90.0.32869 > 10.246.92.8.80: Flags [P.], seq 0:75, ack 1, win 448, options [nop,nop,TS val 24237347 ecr 41170222], length 75
+20:52:43.056253 IP 10.246.90.0.32869 > 10.246.92.8.80: Flags [.], ack 239, win 465, options [nop,nop,TS val 24237347 ecr 41170222], length 0
+20:52:43.056310 IP 10.246.90.0.32869 > 10.246.92.8.80: Flags [.], ack 851, win 484, options [nop,nop,TS val 24237347 ecr 41170222], length 0
+20:52:43.057126 IP 10.246.90.0.32869 > 10.246.92.8.80: Flags [F.], seq 75, ack 851, win 484, options [nop,nop,TS val 24237348 ecr 41170222], length 0
+20:52:43.057405 IP 10.246.90.0.32869 > 10.246.92.8.80: Flags [.], ack 852, win 484, options [nop,nop,TS val 24237349 ecr 41170223], length 0
+```
+Note: The IP 10.246.90.0 showing as source IP in the packet capture above is the IP address of the flannel0 interface on my LB.
+
+
+
+I also suspect that some weird/crazy iptables setup on the worker-nodes  (done by kubernetes) is preventing the traffic to reach the web server pod when I use DNAT. There are many rules on a node, with crazy chains and it is a bit difficult to parse through them in a short amount of time. 
+
+
+So for the time being, ....may be we can use a proxy on the LB! We reach the LB, and LB reaches out to the pods, gets the data and brings it back to us! No address changes, no packet mangling, and hopefully that makes everyone happy. 
 
 
 ## Setting up a proxy on our load balancer. 
