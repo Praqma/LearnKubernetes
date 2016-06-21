@@ -1,4 +1,4 @@
-# # Using Vagrant + Libvirt to setup a Kubernetes cluster (Part-2)
+# Using Vagrant + Libvirt to setup a Kubernetes cluster (Part-2)
 
 # First check and fix DNS
 
