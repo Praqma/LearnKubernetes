@@ -1,14 +1,14 @@
 # Theory of setting up an external load balancer
 
-* It is possible that a LB machine can be setup with two interfaces. One connected to the infrastructure network, and the other connected to the network where pods are created, i.e. the flannel network. For this reason, I think that the LB will be inside the cluster network, and **not** outside the network. (Think inside the box! :)
-* This means that the LB must have flannel client serice running so it can take part in the flannel network. But flannel alone cannot work magic, it's purpose is to assign a subnet to docker0 interface. That means, we are going to need docker too! So that means, we may actually need a Fedora Atomic node which already has flannel and docker both. And each LB will actually be a docker container, with two networks!?
+* It is possible that a LB machine can be setup with two interfaces. One connected to the infrastructure network, and the other connected to the network where pods are created, i.e. the flannel network. For this reason, I think that the LB will be inside the cluster network, and **not** outside the network. (Think inside the box! :) 
+* This means that the LB must have flannel client service running so it can take part in the flannel network. But flannel alone cannot work magic, it's purpose is to assign a subnet to docker0 interface. That means, we are going to need docker too! So that means, we may actually need a Fedora Atomic node which already has flannel and docker both. And each LB will actually be a docker container, with two networks!?
 * When we create a service, kubectl assigns a Cluster IP to it. We can take the (infrastructure) IP of the the LB, and insert/provide that to the service definition. However, the Cluster IP only exists virutally, and none of the nodes (inlucding master), have any IP from Cluster IP range assigned on any of the interfaces. That means it is not possible for any machine to learn where a cluster IP resides (ever). This means this (cluster IP) (or the network information about the cluster IP) can never be found in any routing table on any of the machines, and thus can never be reached. 
 * This brings us to a point that having a LB and having it DNAT the related traffic to a cluster IP will (probably) *never** work. Instead, we should examine the service in question, extract the **end points** defined in that service definition, and then DNAT traffic from public interface of the LB to the pod network (the end points). For this , we can either use simple Iptables, or a proxy such as ha-proxy or nginx.
 * This brings to the next point, that, pods may die at any time and re-created, and the endpoint information in a service definition **will** change. When that happens, the traffic redirection rules on the LB need to be updated. In the beginning, we wil ldo it manually for proof of concept. Later, we can develop some sort of mechanism, that when a service definition changes, we update the proxy redirection rules. 
 * Does iptables have a capability to forward a packet to multiple destination addresses? or do I need to have multiple iptables rules for as end-points as there in a service? How will I manage that? Do I need to write some custom interface to iptable and have some sort of database to update the rules, etc?
 
 
-# Configuration of a Load Balancer
+# Installation of necessary software on the Load Balancer
 Installed a separate VM with CENTOS (minimum). Assigned it the same networks (192.168.121.0/24) and (10.245.1.0/24) , which kubernetes nodes are using. (Though it seems silly to use two networks for the same purpose -- Investigate/ToDo). I had to manually add a virtual network card to the VM and assign it kubernetes0 network).
 
 Password: root/redhat 
@@ -371,9 +371,167 @@ I also suspect that some weird/crazy iptables setup on the worker-nodes  (done b
 So for the time being, ....may be we can use a proxy on the LB! We reach the LB, and LB reaches out to the pods, gets the data and brings it back to us! No address changes, no packet mangling, and hopefully that makes everyone happy. 
 
 
-## Setting up a proxy on our load balancer. 
+# Install and configuration of HAProxy on the load balancer:
 
 First we delete the iptables rules we setup earlier on our load balancer.
 Then we setup a simple nginx or haproxy on lb.
+
+Remove all the iptables rules on LB:
+```
+[root@loadbalancer ~]# iptables -t nat -F ; iptables -F
+```
+
+Install HAProxy:
+```
+[root@loadbalancer ~]# yum -y install haproxy
+```
+
+Configure (r)syslog to receive logs from haproxy:
+```
+[root@loadbalancer ~]# vi /etc/sysconfig/rsyslog 
+SYSLOGD_OPTIONS="-r"
+
+[root@loadbalancer ~]# vi /etc/rsyslog.conf 
+. . .
+local2.*                       /var/log/haproxy.log
+
+
+[root@loadbalancer ~]# service rsyslog restart
+
+[root@loadbalancer ~]# service rsyslog status
+Redirecting to /bin/systemctl status  rsyslog.service
+● rsyslog.service - System Logging Service
+   Loaded: loaded (/usr/lib/systemd/system/rsyslog.service; enabled; vendor preset: enabled)
+   Active: active (running) since Tue 2016-06-21 10:06:04 CEST; 3s ago
+ Main PID: 11957 (rsyslogd)
+   CGroup: /system.slice/rsyslog.service
+           └─11957 /usr/sbin/rsyslogd -n -r
+
+Jun 21 10:06:04 loadbalancer.example.com systemd[1]: Starting System Logging Service...
+Jun 21 10:06:04 loadbalancer.example.com systemd[1]: Started System Logging Service.
+[root@loadbalancer ~]# 
+``` 
+
+## Configure HAProxy:
+```
+[root@loadbalancer ~]# vi /etc/haproxy/haproxy.cfg
+global
+    log         127.0.0.1 local2
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     4000
+    user        haproxy
+    group       haproxy
+    daemon
+    stats socket /var/lib/haproxy/stats
+defaults
+    mode                    http
+    log                     global
+    option                  httplog
+    option                  dontlognull
+    option http-server-close
+    option forwardfor       except 127.0.0.0/8
+    option                  redispatch
+    retries                 3
+    timeout http-request    10s
+    timeout queue           1m
+    timeout connect         10s
+    timeout client          1m
+    timeout server          1m
+    timeout http-keep-alive 10s
+    timeout check           10s
+    maxconn                 3000
+frontend  main *:80
+    stats enable
+    stats uri /haproxy?stats
+    default_backend nginx-pods
+backend nginx-pods
+    balance    roundrobin
+    server  pod1 10.246.92.8:80 check
+[root@loadbalancer ~]# 
+```
+
+Start the haproxy service:
+```
+[root@loadbalancer ~]# service haproxy restart
+Redirecting to /bin/systemctl restart  haproxy.service
+
+
+[root@loadbalancer ~]# service haproxy status  -l
+Redirecting to /bin/systemctl status  -l haproxy.service
+● haproxy.service - HAProxy Load Balancer
+   Loaded: loaded (/usr/lib/systemd/system/haproxy.service; disabled; vendor preset: disabled)
+   Active: active (running) since Tue 2016-06-21 10:18:55 CEST; 2s ago
+ Main PID: 12031 (haproxy-systemd)
+   CGroup: /system.slice/haproxy.service
+           ├─12031 /usr/sbin/haproxy-systemd-wrapper -f /etc/haproxy/haproxy.cfg -p /run/haproxy.pid
+           ├─12032 /usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /run/haproxy.pid -Ds
+           └─12033 /usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /run/haproxy.pid -Ds
+
+Jun 21 10:18:55 loadbalancer.example.com systemd[1]: Started HAProxy Load Balancer.
+Jun 21 10:18:55 loadbalancer.example.com systemd[1]: Starting HAProxy Load Balancer...
+Jun 21 10:18:55 loadbalancer.example.com haproxy-systemd-wrapper[12031]: haproxy-systemd-wrapper: executing /usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /run/haproxy.pid -Ds
+[root@loadbalancer ~]#
+```
+
+Moment of truth - access the Load Balancer from my work computer:
+```
+[kamran@kworkhorse kamran]$ curl --connect-timeout 2 192.168.121.201
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+[kamran@kworkhorse kamran]$ 
+```
+
+
+Here are the logs from the pod itself:
+```
+[vagrant@kubernetes-master ~]$ kubectl log nginx-2040093540-xu5va 
+. . . 
+10.246.90.0 - - [21/Jun/2016:08:19:06 +0000] "GET / HTTP/1.1" 200 612 "-" "curl/7.43.0" "192.168.121.1"
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 (.. More coming up! ..)
