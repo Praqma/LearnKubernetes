@@ -345,6 +345,11 @@ Consider a client computer somewhere on the internet having an IP address (123.4
 
 In my solution above, I have setup a load balancer "inside" the kubernetes network, and using that as a DNAT jump-box so to speak. When I send out a request from my work computer for the IP of load balancer on port 80, it sees that it should DNAT it to the IP address of the nginx pod. So it rewrites the destination IP address with the (private) IP address of the pod, and sends it out towards the pod. The pod only knows about one and only one private IP address it is connected to. So when it sees such a packet, it tries to respond to it and a packet is sent back using the client IP address as the destination and the pod's IP as the source IP. Since the pod can only send a packet out using it's default gateway, it sends it towards it's default gateway which is the flannel network. The flannel network's default gateway doesn't know about this packet. It does not remember sending such a packet in the first place, so this packet is dropped. At least that is the theory!
 
+One more solution to solve this 3-way routing problem may be to use an additional SNAT rule at the LB. This SNAT will change the source address of the outgoing packet with the IP address of the LB's flanel interface IP, going towards the pod. This way, when pod replies with a responce, it sends it reaches back to the LB, instead of going out the default GW of the kubernetes cluster! [Investigate /ToDo]
+
+
+
+
 Now in our situation, I am trying to reach 192.168.121.201 on port 80 through my (client) IP address 192.168.121.1  . The nginx pod should at least register/show a packet arriving for port 80. 
 
 A successful curl directly from the LB shows packets in tcpdump on the nginx pod.
@@ -363,9 +368,26 @@ listening on any, link-type LINUX_SLL (Linux cooked), capture size 262144 bytes
 ```
 Note: The IP 10.246.90.0 showing as source IP in the packet capture above is the IP address of the flannel0 interface on my LB.
 
+But a curl from my work computer does not give me anything, and it times out. 
+
+```
+[kamran@kworkhorse kamran]$ curl --connect-timeout 2 192.168.121.201
+curl: (28) Connection timed out after 2000 milliseconds
+[kamran@kworkhorse kamran]$ 
+```
+
+```
+root@nginx-2040093540-xu5va:/# tcpdump -n  -v -X -i any 'tcp dst port 80'
+tcpdump: listening on any, link-type LINUX_SLL (Linux cooked), capture size 262144 bytes
+^C
+0 packets captured
+0 packets received by filter
+0 packets dropped by kernel
+root@nginx-2040093540-xu5va:/# 
+```
 
 
-I also suspect that some weird/crazy iptables setup on the worker-nodes  (done by kubernetes) is preventing the traffic to reach the web server pod when I use DNAT. There are many rules on a node, with crazy chains and it is a bit difficult to parse through them in a short amount of time. 
+I also suspect that maybe some weird/crazy iptables setup on the worker-nodes  (done by kubernetes) is preventing the traffic to reach the web server pod when I use DNAT. There are many rules on a node, with crazy chains and it is a bit difficult to parse through them in a short amount of time. 
 
 
 So for the time being, ....may be we can use a proxy on the LB! We reach the LB, and LB reaches out to the pods, gets the data and brings it back to us! No address changes, no packet mangling, and hopefully that makes everyone happy. 
