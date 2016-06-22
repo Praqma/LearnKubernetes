@@ -657,11 +657,17 @@ So the IP logged in the nginx access log is the IP address of the flannel0 inter
 Hurray! It works!
 
 
-**We never lose!** (Kelsey Hightower)
+**We never lose!**
 
 
 
-# More notes:
-* So the iptables DNAT works beautifully, sending traffic towards one target IP. I need to investigate if we can use multiple IPs as a target for DNAT. That way I do not have to write multiple DNAT rules for all the destination pods. If it doesn't work i.e. if the multiple IP addresses are not supported, I just have to create a Iptables "named chain" for each type of traffic and in each chain, I will have multiple DNAT rules for each individual target pod.
+# More notes / future work:
+* So the iptables DNAT (and SNAT) works beautifully, sending traffic towards one target IP. I need to investigate if we can use multiple IPs as a target for DNAT. That way I do not have to write multiple DNAT rules for all the destination pods. If it doesn't work i.e. if the multiple IP addresses are not supported, I just have to create a Iptables "named chain" for each type of traffic and in each chain, I will have multiple DNAT rules for each individual target pod.
+* Henrik suggests that instead of hitting pods from LB, why don't we try to hit the service IP from LB? That way we do not have to go through  creating a mechanism for service discovery and managing haproxy configuration generation, or IPTables rules management. This is a great idea! I am not sure if that can be implemented (easily) though. There are several reasons for this:
+** The IPs belonging to the Services/PortalNetwork are not implemented on any interface on any node. So the routing table of any node does not know about the service IPs. How would we make a LB reach a sevrice IP?
+**  The kubernetes master node cannot reach a service IP, even when it (the master) is part of the kubernetes pod/flannel network. Only (pods runing on) nodes are able to do so. Why? There are some crazy IPTables rules on nodes, which help achieve this. May be I need to reverse engineer that to use that in my LB?
+** Make diagrams on how this whole thing (LoadBalancer) works, based on work done in this document.
+
+ 
 
 
