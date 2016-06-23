@@ -661,7 +661,7 @@ Hurray! It works!
 
 # The network diagram:
 
-![images/Kubernetes-Cluster-With-Internal-LoadBalancer.dia ](images/Kubernetes-Cluster-With-Internal-LoadBalancer.dia)
+![images/Kubernetes-Cluster-With-Internal-LoadBalancer.png](images/Kubernetes-Cluster-With-Internal-LoadBalancer.png)
 
 
 # More notes / future work:
