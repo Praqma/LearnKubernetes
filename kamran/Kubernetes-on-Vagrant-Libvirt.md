@@ -3995,8 +3995,6 @@ options ndots:5
 root@nginx-2040093540-qhcyo:/#
 ```
 
-
-
 Next part: [Kubernetes-on-Vagrant-Libvirt-part-2.md](Kubernetes-on-Vagrant-Libvirt-part-2.md)
 
 

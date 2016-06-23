@@ -659,6 +659,9 @@ Hurray! It works!
 
 **We never lose!**
 
+# The network diagram:
+
+![images/Kubernetes-Cluster-With-Internal-LoadBalancer.dia ](images/Kubernetes-Cluster-With-Internal-LoadBalancer.dia)
 
 
 # More notes / future work:
