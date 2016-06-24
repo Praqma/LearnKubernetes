@@ -1,10 +1,12 @@
 # Theory of setting up an external load balancer
 
+**Note:** Please ignore spelling errors. I composed this document in a simple text editor and yet have to run spell check on this document.
+
 * It is possible that a LB machine can be setup with two interfaces. One connected to the infrastructure network, and the other connected to the network where pods are created, i.e. the flannel network. For this reason, I think that the LB will be inside the cluster network, and **not** outside the network. (Think inside the box! :) 
 * This means that the LB must have flannel client service running so it can take part in the flannel network. But flannel alone cannot work magic, it's purpose is to assign a subnet to docker0 interface. That means, we are going to need docker too! So that means, we may actually need a Fedora Atomic node which already has flannel and docker both. And each LB will actually be a docker container, with two networks!?
-* When we create a service, kubectl assigns a Cluster IP to it. We can take the (infrastructure) IP of the the LB, and insert/provide that to the service definition. However, the Cluster IP only exists virutally, and none of the nodes (inlucding master), have any IP from Cluster IP range assigned on any of the interfaces. That means it is not possible for any machine to learn where a cluster IP resides (ever). This means this (cluster IP) (or the network information about the cluster IP) can never be found in any routing table on any of the machines, and thus can never be reached. 
+* When we create a service, kubectl assigns a Cluster IP to it. We can take the (infrastructure) IP of the the LB, and insert/provide that to the service definition. However, the Cluster IP only exists virtually, and none of the nodes (including master), have any IP from Cluster IP range assigned on any of the interfaces. That means it is not possible for any machine to learn where a cluster IP resides (ever). This means this (cluster IP) (or the network information about the cluster IP) can never be found in any routing table on any of the machines, and thus can never be reached. 
 * This brings us to a point that having a LB and having it DNAT the related traffic to a cluster IP will (probably) *never** work. Instead, we should examine the service in question, extract the **end points** defined in that service definition, and then DNAT traffic from public interface of the LB to the pod network (the end points). For this , we can either use simple Iptables, or a proxy such as ha-proxy or nginx.
-* This brings to the next point, that, pods may die at any time and re-created, and the endpoint information in a service definition **will** change. When that happens, the traffic redirection rules on the LB need to be updated. In the beginning, we wil ldo it manually for proof of concept. Later, we can develop some sort of mechanism, that when a service definition changes, we update the proxy redirection rules. 
+* This brings to the next point, that, pods may die at any time and re-created, and the endpoint information in a service definition **will** change. When that happens, the traffic redirection rules on the LB need to be updated. In the beginning, we will do it manually for proof of concept. Later, we can develop some sort of mechanism, that when a service definition changes, we update the proxy redirection rules. 
 * Does iptables have a capability to forward a packet to multiple destination addresses? or do I need to have multiple iptables rules for as end-points as there in a service? How will I manage that? Do I need to write some custom interface to iptable and have some sort of database to update the rules, etc?
 
 
@@ -825,12 +827,36 @@ COMMIT
 ```
 
 
+# Why hitting the service IP from an internal Load Balancer is (almost) impossible:
+So, there was this idea of using load balancer to forward traffic to a cluster/service IP, which is normally created/assigned when we create a "service" in Kubernetes, normally by exposing a deployment. If this would work, this would be super convenient for us (ideal, actually) to just forward related traffice towards a service IP, and let it do it's thing. Unfortunately, accessing a service IP from anywher other than the Kubernetes worker nodes is (almost) impossible. After analyzing the IPTables rules on the worker node (above), I have deduced that the cluster IP is merely being used as a "label" in the rules above. The iptables rules check if incoming trafic is destined for a certain service IP. When it sees that the incoming request is indeed coming in for the service IP, it (eventually) DNATs it to a real pod IP. There is a lot of jumping around in the chains as listed above, but the net result is that if a request comes in for a service IP (from within the pod network), it gets DNAT to a pod IP.
+
+The IPTables rules are created on the node by kubernetes as soon as a service is created. That means the API which talks to IPTables has two key pieces of information. The service IP, and the IP Addresses of the end-points (pods) of that service. 
+
+If we are to create our own load balancer, we need to mimic the complete behavior of the IPTables as it is implemented on each worker node. This was kind of possible by doing a some serious amount of effort, but it would still be fruitless, because our load balancer is at one disadvantage. Our load balancer (by design) would already have forwarded/DNAT the incoming traffic to a service IP. And to capture that outgoing traffic, we would need another iptables box (so to speak), which would then check for certain conditions and then redirect traffic to the actual pods. Again, since the cluster IP is not assigned to any of the interfaces in the entire infrastructure, it does not make sense to try to first DNAT to a service IP, and then capturing that packet and rerouting it. It is un-necessarily complex (read: hopeless). 
+
+Remember: The whole point of a service IP (cluster IP) is to facilitate different pods (front-ends) to be able to each their respective backend pods. So accessing cluster IP from outside the pod (flannel) network was never a design consideration in Kubernetes. It is the external IP that is used to access these services from outside pod network. And this needs programmable routers. That is why so far it is only AWS and GCE, who support the load balancer feature for Kubernetes. They have developed mechanisms to manage this sort of communication.
+
+
+## Solution:
+The best is to receive traffic/requests on our (so-called) public IP of the internal load balancer, and then DNAT it directly to the related pods. To be able to do that , we query the service definition, extract the IPs of the pods (end-points) from the service, and setup a forwarding mechanism. This forwarding mechanism can be either of the following two:
+
+1. IPtables with DNAT
+2. HAProxy with pod IPs as back-ends.
+
+No matter how much I am comfortable with IP tables (or not), I would prefer the solution to be a HA Proxy solution. My reasoning is that when we go with a IPtables solution, we need to maintain some sort of micro-database to keep track of what rules need to be created or deleted, etc. Besides, no one wants to mess with IPTables when troubleshooting a system (not even me!). 
+
+When we use a HAProxy solution, the config files **will be** serving as that database, in a sense. Also, creating HAProxy configs from a template are more straight forward, easy to understand, and easy to troubleshoot. We just need to query the kubernetes API for service definitions and update our haproxy configuration when there is a new service, or when the service is modified or deleted. 
+
+How this will actually be done is something which will be described in next few days.
+
 
 # More notes / future work:
 * So the iptables DNAT (and SNAT) works beautifully, sending traffic towards one target IP. I need to investigate if we can use multiple IPs as a target for DNAT. That way I do not have to write multiple DNAT rules for all the destination pods. If it doesn't work i.e. if the multiple IP addresses are not supported, I just have to create a Iptables "named chain" for each type of traffic and in each chain, I will have multiple DNAT rules for each individual target pod.
 * Henrik suggests that instead of hitting pods from LB, why don't we try to hit the service IP from LB? That way we do not have to go through  creating a mechanism for service discovery and managing haproxy configuration generation, or IPTables rules management. This is a great idea. But there is a reason I did not go down that path when I started working on LB. The thing is, the cluster IP network is only reachable through worker-nodes and pods and that "cluster network" is not setup on any nodes, nor on LB. So the only reachable items were pods, so I took the path of extracting the service endpoints from a service and then trying to reach them instead. More observations about this are:
 ** The IPs belonging to the Services/PortalNetwork are not implemented on any interface on any node. So the routing table of any node does not know about the service IPs. How would we make a LB reach a sevrice IP?
 **  The kubernetes master node cannot reach a service IP, even when it (the master) is part of the kubernetes pod/flannel network. Only (pods runing on) nodes are able to do so. Why? There are some crazy IPTables rules on nodes, which help achieve this. May be I need to reverse engineer that to use that in my LB?
+** This should be helpful in creating a IPTables based load balancer: [https://www.webair.com/community/simple-stateful-load-balancer-with-iptables-and-nat/](https://www.webair.com/community/simple-stateful-load-balancer-with-iptables-and-nat/)
+ 
 
  
 
