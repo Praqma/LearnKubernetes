@@ -16,7 +16,7 @@ Installed a separate VM with CENTOS (minimum). Assigned it the same networks (19
 Password: root/redhat 
 Installed bind-utils, net-tools, flannel - using yum.
 ```
-[root@loadbalancer ~]# yum -y install bind-utils net-tools flannel
+[root@loadbalancer ~]# yum -y install bind-utils net-tools flannel rsync haproxy
 ```
 
 My Load Balancer VM's network looks like this:

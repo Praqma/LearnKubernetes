@@ -101,3 +101,7 @@ nginx|default|10.247.78.179|192.168.121.201|80/TCP|10.246.82.2:80,10.246.82.6:80
 sqlite> 
 ```
 
+
+# Future work:
+* The script should boot up at system boot time and setup additional network interfaces and haproxy.
+* Haproxy service should load **after** the loadbalancer service starts.
