@@ -102,13 +102,154 @@ function Check_Master_SSH_Command_Execution() {
 function Show_LB_Status() {
   # Lets display records from the LB database:
   echo 
-  echo "Displaying data from the table 'ServiceToEndPointsMapping' , from the database 'LoadBalancer' :"
-  echo "-----------------------------------------------------------------------------------------------"
+  echo "Displaying data from the table 'ServiceToEndPointsMapping' , from the 'main' database:"
+  echo "--------------------------------------------------------------------------------------"
   sqlite3 $LB_DATABASE "select * from ServiceToEndPointsMapping;"
-  echo "-----------------------------------------------------------------------------------------------"
+  echo "--------------------------------------------------------------------------------------"
   echo 
 }
 
+
+#---------------------------------------------
+
+function Services_Info_Table() {
+  OPERATION=$1
+  # This function builds the information table in the SQL DB. 
+
+  # Reset IFS to null. Sometimes IFS can be a pain in the ***
+  IFS=''
+
+  # SERVICE_LIST=$(ssh ${MASTER_USER}@${MASTER_IP} "kubectl get services --all-namespaces=true | egrep -v '<none>|AGE'" | tr '\n' '\n\r')
+  SERVICE_LIST=$(ssh -n ${MASTER_USER}@${MASTER_IP} "kubectl get services --all-namespaces=true | egrep -v '<none>|AGE'" )
+  # Be careful: SSH reads from standard input and eats all remaining lines. Use ssh -n
+  # Tip: from http://stackoverflow.com/questions/9393038/ssh-breaks-out-of-while-loop-in-bash
+
+  # There seems to be a problem in the way the kubectl output is formatted. Something wrong with line endings.
+  # (Actually it turned out to be a problem caused by SSH. but ayway). 
+
+  # Tip from: http://stackoverflow.com/questions/10929453/read-a-file-line-by-line-assigning-the-value-to-a-variable
+  echo "Following services were found with external IPs - on Kubernetes master ..."
+  echo "-----------------------------------------------------------------------------------------------"
+
+  # Sometimes for does not work as expected with output of other programs, such as sqlite.
+  # use while intead  # for LINE in  $SERVICE_LIST; do
+  echo $SERVICE_LIST | while IFS='' read -r SERVICE_LINE || [[ -n "$SERVICE_LINE" ]]; do
+    echo $SERVICE_LINE
+    if [ "$OPERATION" == "insert" ]; then
+      # echo "******** Inserting record: $SERVICE_LINE"
+      INSERT_SERVICE_RECORD_IN_DB $SERVICE_LINE
+    fi
+  done
+}
+
+#---------------------------------------------
+
+function FIND_SERVICE_ENDPOINTS() {
+  # ORIG_IFS=$IFS
+  # This function describes a service and extracts endpoints information, which is then inserted into the main DB table.
+  # Receives two variables as parameters - namespace and service.
+  NAMESPACE=$1
+  SERVICE=$2
+
+  # Tip from: http://stackoverflow.com/questions/9393038/ssh-breaks-out-of-while-loop-in-bash
+  MYENDPOINTS=$(ssh -n ${MASTER_USER}@${MASTER_IP} "kubectl --namespace=${NAMESPACE} describe service ${SERVICE}  | grep 'Endpoints:'" | awk '{print $2}')
+  echo "${MYENDPOINTS}"
+  # IFS=$ORIG_IFS
+}
+
+
+#---------------------------------------------
+
+function INSERT_SERVICE_RECORD_IN_DB() {
+  # This function expects a record input as $1. It breaks it down into fields and then adds that to the datbase.
+  SERVICE_RECORD=$1
+  # Set Input Field Separator to a space.
+  ORIG_IFS=$IFS
+  IFS=' '
+  # break a record fields into separate variables.
+  set $SERVICE_RECORD
+  # We know that format of a record is:
+  # NAMESPACE  SERVICENAME  CLUSTER-IP  EXTERNAL-IP  PORT(S)  AGE
+  # $1         $2           $3          $4           $5       $6
+  NAMESPACE_NAME=$1
+  SERVICE_NAME=$2
+  CLUSTER_IP=$3
+  EXTERNAL_IP=$4
+  PORTS=$5
+  FOUND_END_POINTS=""
+
+  # Just before we insert these values in the db table, we need to find the Endpoints, so we can add complete information in one go.
+  # FIND_SERVICE_ENDPOINTS $NAMESPACE_NAME $SERVICE_NAME 
+  FOUND_END_POINTS=$(FIND_SERVICE_ENDPOINTS $NAMESPACE_NAME $SERVICE_NAME)
+  # echo "FOUND the END POINTS as: $FOUND_END_POINTS"
+
+  # Insert these values (including Endpoints information) in the database table (skipping AGE):
+  echo -n "Inserting in database, with endpoints: $FOUND_END_POINTS "
+  sqlite3 $LB_DATABASE \
+	"insert into ServiceToEndPointsMapping values(\"$NAMESPACE_NAME\",\"$SERVICE_NAME\",\"$CLUSTER_IP\",\"$EXTERNAL_IP\",\"$PORTS\",\"$FOUND_END_POINTS\");"
+  if [ $? -eq 0 ]; then
+    echo "... INSERTED!"
+  else
+    echo "... INSERT failed!"
+  fi 
+  # Reset IFS, otherwise it messes up with the parent function if it is being used there.
+  IFS=$ORIG_IFS
+}
+
+
+#---------------------------------------------
+
+function CREATE_HA_PROXY_CONFIG() {
+  # Here we create a config file , which will later on be matched with the running config file (in another function). 
+  cp haproxy-global-default.cfg /tmp/haproxy-loadbalancer.cfg
+  
+  # We need to translate the | signs from the sql output into space, so later we can break the record into individual values. 
+
+  # This commented line works independently of setting IFS again in the loop 
+  # sqlite3 $LB_DATABASE "select * from ServiceToEndPointsMapping ;" | tr '|' ' ' | while IFS='' read -r SERVICE_LINE || [[ -n "$SERVICE_LINE" ]]; do
+
+  # The sqlite command below needs a secondary IFS=\| in the main loop.
+  sqlite3 $LB_DATABASE "select * from ServiceToEndPointsMapping ;" | while IFS='' read -r SERVICE_LINE || [[ -n "$SERVICE_LINE" ]]; do
+    ORIG_IFS=$IFS
+    IFS=\|
+    echo $SERVICE_LINE
+    set $SERVICE_LINE
+    echo "$1, $2, $3, $4, $5, $6" 
+    NAMESPACE=$1
+    SERVICE=$2
+    CLUSTERIP=$3
+    EXTERNALIP=$4
+    PORTS=$5
+    ENDPOINTS=$6
+    # There can be multiple ports for one external IP such as a web server running both 80 and 443. Need to find a way to manage that.
+    # For now I will work with only one port.
+    PORT=$(echo $PORTS| cut -d '/' -f 1)
+    echo "-------------------------------------------------"
+    echo "listen ${NAMESPACE}-${SERVICE}"
+    # Is there a way to pass a tab in echo?
+    echo "      bind ${EXTERNALIP}:${PORT}"
+    # Need to break the endpoints line into individual lines, using a funtion
+    WRITE_ENDPOINTS_IN_CONFIG $ENDPOINTS
+    echo "--------------------------------------------------"
+    IFS=$ORIG_IFS
+  done
+
+}
+
+
+# ------------------------------------
+
+function WRITE_ENDPOINTS_IN_CONFIG() {
+  ENDPOINTS=$1
+  ORIG_IFS=$IFS
+  IFS=','
+  COUNTER=1
+  for ENDPOINT in ${ENDPOINTS[@]}; do
+    echo "        server pod-${COUNTER} $ENDPOINT check"
+    let COUNTER++
+  done
+  IFS=$ORIG_IFS
+}
 
 
 #
@@ -122,6 +263,8 @@ echo "Starting Sanity checks ..."
 
 Check_LB_IP
 
+Check_FLANNEL
+
 Check_Database
 
 Check_Master_SSH_Connectivity
@@ -130,11 +273,9 @@ Check_Master_SSH_Command_Execution "uptime"
 # cs is abbreviation of componentstatuses! 
 Check_Master_SSH_Command_Execution "kubectl get cs"
 
-Check_FLANNEL
-
-
 # Showing status is not actually a sanity check ...
-Show_LB_Status
+# Show_LB_Status
+
 echo
 echo "Sanity checks completed successfully!"
 #
@@ -151,6 +292,7 @@ echo "Beginning execution of main program ..."
 case $1 in 
 add)
   Message="Add a mapping."
+  Services_Info_Table insert
   ;;
 delete)
   Message="Delete a mapping."
@@ -161,6 +303,10 @@ update)
 show)
   Message="Show a mapping."
   Show_LB_Status
+  Services_Info_Table show
+  ;;
+create-config)
+  CREATE_HA_PROXY_CONFIG
   ;;
 *)
   Message="You need to use one of the operations: add|delete|update|show"
@@ -169,6 +315,14 @@ esac
 
 echo $Message
 
+echo
 
+echo "TODO:"
+echo "-----"
+echo "* Create multiple listen sections depending on the ports of a service. such as 80, 443 for web servers. This may be tricky. Or there can be two bind commands in one listen directive/section."
+echo "* Add test for flannel interface to be up"
+echo "* Add check for the LB primary IP. If it is found in kubernetes service definitions on master, abort program and as user to fix that first. LB Primary IP must not be used as a external IP in any of the services."
+echo "* Use local kubectl instead of SSHing into Master"
+echo
 #
 ##### END - PROGRAM CODE ###################

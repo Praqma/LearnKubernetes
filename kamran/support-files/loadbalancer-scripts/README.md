@@ -102,6 +102,18 @@ sqlite>
 ```
 
 
+# Creating HAproxy files from the newly created database:
+
+We use two standard files for all the global and default options. 
+* haproxy-global-default.cfg and container only the global and default options.
+* haproxy-service-template.cfg
+
+Actually, we do not need to have a service template file, as it is very small, and we can create it from the script. (Evaluate/To Do/TODO)
+
+
+
+
 # Future work:
+* The script should log it's working to a log file, such as: /var/log/loadbalancer.log
 * The script should boot up at system boot time and setup additional network interfaces and haproxy.
 * Haproxy service should load **after** the loadbalancer service starts.
