@@ -200,8 +200,16 @@ function INSERT_SERVICE_RECORD_IN_DB() {
 #---------------------------------------------
 
 function CREATE_HA_PROXY_CONFIG() {
+
+  TEMP_HAPROXY_CONF="/tmp/haproxy-loadbalancer.cfg"
+
+  if [ -r $TEMP_HAPROXY_CONF ] ; then
+    rm -f $TEMP_HAPROXY_CONF
+    touch $TEMP_HAPROXY_CONF
+  fi 
+
   # Here we create a config file , which will later on be matched with the running config file (in another function). 
-  cp haproxy-global-default.cfg /tmp/haproxy-loadbalancer.cfg
+  cp haproxy-global-default.cfg $TEMP_HAPROXY_CONF
   
   # We need to translate the | signs from the sql output into space, so later we can break the record into individual values. 
 
@@ -225,10 +233,11 @@ function CREATE_HA_PROXY_CONFIG() {
     # For now I will work with only one port.
     PORT=$(echo $PORTS| cut -d '/' -f 1)
     echo "-------------------------------------------------"
-    echo "listen ${NAMESPACE}-${SERVICE}"
+    echo "" >> $TEMP_HAPROXY_CONF
+    echo "listen ${NAMESPACE}-${SERVICE}-${PORT}" >> $TEMP_HAPROXY_CONF
     # Is there a way to pass a tab in echo?
-    echo "      bind ${EXTERNALIP}:${PORT}"
-    # Need to break the endpoints line into individual lines, using a funtion
+    echo "      bind ${EXTERNALIP}:${PORT}" >> $TEMP_HAPROXY_CONF
+    # Need to break the endpoints line into individual lines, using a function
     WRITE_ENDPOINTS_IN_CONFIG $ENDPOINTS
     echo "--------------------------------------------------"
     IFS=$ORIG_IFS
@@ -245,7 +254,7 @@ function WRITE_ENDPOINTS_IN_CONFIG() {
   IFS=','
   COUNTER=1
   for ENDPOINT in ${ENDPOINTS[@]}; do
-    echo "        server pod-${COUNTER} $ENDPOINT check"
+    echo "        server pod-${COUNTER} $ENDPOINT check" >> $TEMP_HAPROXY_CONF
     let COUNTER++
   done
   IFS=$ORIG_IFS
