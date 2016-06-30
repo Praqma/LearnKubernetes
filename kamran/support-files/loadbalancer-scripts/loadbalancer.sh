@@ -328,6 +328,8 @@ echo
 
 echo "TODO:"
 echo "-----"
+echo "* Use [root@loadbalancer ~]# curl -k -s -u vagrant:vagrant  https://10.245.1.2/api/v1/namespaces/default/endpoints/apache | grep ip"
+echo "The above is better to use instead of getting endpoints from kubectl, because kubectl only shows 2-3 endpoints and says +XX more..."
 echo "* Create multiple listen sections depending on the ports of a service. such as 80, 443 for web servers. This may be tricky. Or there can be two bind commands in one listen directive/section."
 echo "* Add test for flannel interface to be up"
 echo "* Add check for the LB primary IP. If it is found in kubernetes service definitions on master, abort program and as user to fix that first. LB Primary IP must not be used as a external IP in any of the services."
