@@ -668,7 +668,9 @@ Hurray! It works!
 
 
 # Reaching the load balancer from other segments of the corporate network:
-So, I have this other network 172.16.0.07/16, which is connected to my router on the 172.16.0.1 interface. I have client computer connected to this network. I want to reach the load balancer. If the routing is correct, then I should be able to reach (any service on) the load balancer from the client computer. Initially it failed to do so, because I found out that the IPTables rules on my router (my laptop computer actually - running all the VMs and virtual networks), were preventing any traffic to go beyond the router's 192.168.121.1 interface into the network. So I had to stop the firewalld service on my computer, and just turn on packet forwarding (/proc/sys/net/ipv4/ip_forward). Then I was able to reach services on the load balancer.
+So, I have this other network 172.16.0.07/16, which is connected to my router on the 172.16.0.1 interface. I have client computer connected to this network. I want to reach the load balancer. If the routing is correct, then I should be able to reach (any service on) the load balancer from the client computer. Initially it failed to do so, because I found out that the IPTables rules on my router (my laptop computer actually - running all the VMs and virtual networks), were preventing any traffic to go beyond the router's 192.168.121.1 interface into the network. So I had to stop the firewalld service on my computer, and just turn on packet forwarding (/proc/sys/net/ipv4/ip_forward). Then I was able to reach services on the load balancer from the client computer on another network. 
+
+**Note:** This created another problem that when I tried to run a new pod, etc on the cluster the worker node (the docker service on the worker node) was unable to pull the image from the internet. By disabling the firewall / clearing iptables rules on the KVM host, the nodes lost their ability to talk to internet. May be some SNAT/Masquerade rules got removed, which should have stayed! (TODO/Investigate)
 
 ![images/Reaching-LoadBalancer-From-Other-Networks.png](images/Reaching-LoadBalancer-From-Other-Networks.png) 
 

@@ -1,0 +1,205 @@
+NOTE: This document does not contain ANYTHING meaningful for the readers. This is just a scratchpad.
+I have this, because I do not want to lose my testing too across system restarts, etc.
+
+####################################################################################################
+
+
+
+listen NAMESPACE_NAME-SERVICE_NAME
+    bind EXTERNAL_IP:PORT
+    server pod-i ENDPOINT_WITH_PORT check
+
+
+[root@loadbalancer ~]# IFS=','
+[root@loadbalancer ~]# for i in ${ENDPOINTS[@]} ; do echo $i; echo "------"; done
+10.246.82.2:80
+------
+10.246.82.6:80
+------
+[root@loadbalancer ~]# 
+
+
+------ 
+
+[root@loadbalancer ~]# ENDPOINTS_IPS=$(ssh vagrant@192.168.121.91 "curl -k -s  http://localhost:8080/api/v1/namespaces/default/endpoints/apache" | egrep -w 'ip' | sed  -e 's/\"//g') 
+[root@loadbalancer ~]# ENDPOINTS_PORT=$(ssh vagrant@192.168.121.91 "curl -k -s  http://localhost:8080/api/v1/namespaces/default/endpoints/apache" | egrep -w 'port' | sed  -e 's/\"//g') 
+[root@loadbalancer ~]# echo $ENDPOINTS_IPS 
+ip: 10.246.82.10, ip: 10.246.82.11, ip: 10.246.82.12, ip: 10.246.82.13, ip: 10.246.82.14, ip: 10.246.82.15, ip: 10.246.82.5,
+[root@loadbalancer ~]# echo $ENDPOINTS_PORT 
+port: 80,
+[root@loadbalancer ~]# 
+
+
+---
+
+[root@loadbalancer ~]# ENDPOINTS_IPS=$(ssh vagrant@192.168.121.91 "curl -k -s  http://localhost:8080/api/v1/namespaces/default/endpoints/apache" | egrep -w 'ip' | sed  -e 's/\"//g'  -e 's/ip://g' -e 's/,//g' ) 
+[root@loadbalancer ~]# for i in ${ENDPOINTS_IPS[@]}; do echo $i; echo "-----------"; done 10.246.82.10
+-----------
+10.246.82.11
+-----------
+10.246.82.12
+-----------
+10.246.82.13
+-----------
+10.246.82.14
+-----------
+10.246.82.15
+-----------
+10.246.82.5
+-----------
+[root@loadbalancer ~]# 
+
+[root@loadbalancer ~]# ENDPOINTS_PORT=$(ssh vagrant@192.168.121.91 "curl -k -s  http://localhost:8080/api/v1/namespaces/default/endpoints/apache" | egrep -w 'port' | sed  -e 's/\"//g' -e 's/,//'  | cut -f 2  -d ':' )  ; echo "Found: $ENDPOINTS_PORT"
+Found:  80
+[root@loadbalancer ~]# 
+
+
+
+---
+
+The api watch stuff:
+
+[vagrant@kubernetes-master ~]$ curl http://localhost:8080/api/v1/watch/namespaces/default/
+{"type":"ADDED","object":{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"default","selfLink":"/api/v1/namespaces/default","uid":"7bf4ad49-34d3-11e6-840f-525400d416cb","resourceVersion":"6","creationTimestamp":"2016-06-17T21:36:00Z"},"spec":{"finalizers":["kubernetes"]},"status":{"phase":"Active"}}}
+^C
+[vagrant@kubernetes-master ~]$ 
+
+
+
+--------
+
+
+New DB structure:
+sqlite> CREATE TABLE Services (NameSpace varchar(50), ServiceName varchar(50), ClusterIP varchar (15), ExternalIP varchar(15), Ports varchar(50) , PRIMARY KEY (NameSpace, ServiceName) );
+
+sqlite> CREATE TABLE ServiceEndPoints (NameSpace varchar(50), ServiceName varchar(50), EndPointWithPort varchar(21), FOREIGN KEY (NameSpace, ServiceName)  REFERENCES Services(NameSpace,ServiceName) ON DELETE CASCADE );
+sqlite> 
+
+
+sqlite> .tables
+ServiceEndPoints           Services                 
+ServiceToEndPointsMapping
+sqlite> drop table ServiceToEndPointsMapping ;
+sqlite> .exit
+[root@loadbalancer ~]# 
+
+sqlite> PRAGMA foreign_keys;
+0
+sqlite> PRAGMA foreign_keys = ON;
+
+sqlite> select * from Services;
+default|apache|10.247.10.70|192.168.121.12|80/TCP
+default|nginx|10.247.190.92|192.168.121.11|80/TCP
+sqlite> delete from Services;
+Error: foreign key constraint failed
+sqlite> 
+
+
+==================
+
+
+
+[root@loadbalancer ~]# ./loadbalancer.sh add
+
+Starting Sanity checks ...
+./loadbalancer.sh: line 323: Check_FLANNEL: command not found
+
+Load Balancer SQLite database exists as:
+/opt/LoadBalancer.sqlite.db: SQLite 3.x database
+
+Checking if kubernetes master 192.168.121.91 is reachable over SSH ...Yes! :) Success connecting to Kubernetes master 192.168.121.91 on port 22 !
+
+Running command 'uptime' as user vagrant on Kubernetes Master 192.168.121.91.
+
+ 17:35:34 up  6:28,  1 user,  load average: 0.58, 0.22, 0.14
+
+Running command 'kubectl get cs' as user vagrant on Kubernetes Master 192.168.121.91.
+
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-1               Healthy   {"health": "true"}   
+etcd-0               Healthy   {"health": "true"}   
+
+Sanity checks completed successfully!
+
+Beginning execution of main program ...
+Following services were found with external IPs - on Kubernetes master ...
+-----------------------------------------------------------------------------------------------
+default       apache                 10.247.10.70     192.168.121.12   80/TCP              2d
+Inserting services in database table ...... INSERTED!
+Inserting Endpoints information  in database table ...default, apache, 10.246.82.10
+: 80
+--------------------------------------------
+... INSERTED!
+default, apache, 10.246.82.11
+: 80
+--------------------------------------------
+... INSERTED!
+default, apache, 10.246.82.12
+: 80
+--------------------------------------------
+... INSERTED!
+default, apache, 10.246.82.13
+: 80
+--------------------------------------------
+... INSERTED!
+default, apache, 10.246.82.14
+: 80
+--------------------------------------------
+... INSERTED!
+default, apache, 10.246.82.15
+: 80
+--------------------------------------------
+... INSERTED!
+default, apache, 10.246.82.5: 80
+--------------------------------------------
+... INSERTED!
+default       nginx                  10.247.190.92    192.168.121.11   80/TCP              2d
+Inserting services in database table ...... INSERTED!
+Inserting Endpoints information  in database table ...default, nginx, 10.246.82.6
+: 80
+--------------------------------------------
+... INSERTED!
+default, nginx, 10.246.82.8: 80
+--------------------------------------------
+... INSERTED!
+Add a mapping.
+
+TODO:
+-----
+* Use [root@loadbalancer ~]# curl -k -s -u vagrant:vagrant  https://10.245.1.2/api/v1/namespaces/default/endpoints/apache | grep ip
+The above is better to use instead of getting endpoints from kubectl, because kubectl only shows 2-3 endpoints and says +XX more...
+* Create multiple listen sections depending on the ports of a service. such as 80, 443 for web servers. This may be tricky. Or there can be two bind commands in one listen directive/section.
+* Add test for flannel interface to be up
+* Add check for the LB primary IP. If it is found in kubernetes service definitions on master, abort program and as user to fix that first. LB Primary IP must not be used as a external IP in any of the services.
+* Use local kubectl instead of SSHing into Master
+
+[root@loadbalancer ~]# 
+
+
+[root@loadbalancer ~]# sqlite3 /opt/LoadBalancer.sqlite.db "select * from ServiceEndPoints;"
+default|apache|10.246.82.10
+: 80
+default|apache|10.246.82.11
+: 80
+default|apache|10.246.82.12
+: 80
+default|apache|10.246.82.13
+: 80
+default|apache|10.246.82.14
+: 80
+default|apache|10.246.82.15
+: 80
+default|apache|10.246.82.5: 80
+default|nginx|10.246.82.6
+: 80
+default|nginx|10.246.82.8: 80
+[root@loadbalancer ~]# 
+
+
+
+
+
+
+
