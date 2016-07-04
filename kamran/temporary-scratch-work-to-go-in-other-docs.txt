@@ -199,6 +199,51 @@ default|nginx|10.246.82.8: 80
 
 
 
+=============================================
+
+IP address alignment:
+
+[root@loadbalancer ~]# ip addr show dev eth0 | grep secondary| awk '{print $2'}| cut -f1 -d '/' | sort -n > /tmp/IP_from_eth0.txt
+
+
+[root@loadbalancer ~]# grep bind /tmp/haproxy-loadbalancer.cfg | awk '{print $2'} | cut -f1 -d ':' | sort -n > /tmp/IP_from_haproxy.txt
+
+
+ ------------
+
+
+[root@loadbalancer ~]# cat /tmp/IP_from_eth0.txt 
+192.168.121.12
+192.168.121.13
+
+[root@loadbalancer ~]# cat /tmp/IP_from_haproxy.txt 
+192.168.121.11
+192.168.121.12
+[root@loadbalancer ~]# 
+
+
+[root@loadbalancer ~]# comm -3 /tmp/IP_from_eth0.txt /tmp/IP_from_haproxy.txt | grep "[[:space:]]"
+	192.168.121.11
+[root@loadbalancer ~]# comm -3 /tmp/IP_from_eth0.txt /tmp/IP_from_haproxy.txt | grep -v "[[:space:]]"
+192.168.121.13
+[root@loadbalancer ~]# 
+
+
+In the two files above, there is one extra IP (192.168.121.13) in file from eth0 , which needs to be removed from eth0 (as it's corresponding service is probably deleted). And, there is one IP address (192.168.121.11) from haproxy, which needs to be setup on eth0. The IP address 192.168.121.12 is configured both on eth0 and in the haproxy, so it does not need to be changed. 
+
+
+In the commands above:
+* The line with the spaces in the beginning is the IP from the haproxy , not found on eth0, needs to be setup up on eth0.
+* The line not beginning with spaces is the IP which needs to be removed from eth0. 
+
+Simple!
+
+=================== 
+
+
+
+
+
 
 
 

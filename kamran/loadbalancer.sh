@@ -88,7 +88,7 @@ function Check_Master_SSH_Command_Execution() {
   # echo "(You may need to accept the fingerprint of the master when this script is run for the first time.)"
   echo "Running command '$1' as user $MASTER_USER on Kubernetes Master $MASTER_IP."
   echo
-  ssh ${MASTER_USER}@${MASTER_IP} "$1"
+  ssh -o ConnectTimeout=5 ${MASTER_USER}@${MASTER_IP} "$1"
 
   if [ $? -gt 0 ]; then
     echo "There was a problem running '$1' through ${MASTER_USER}@${MASTER_IP} over SSH. Please check."
@@ -102,9 +102,9 @@ function Check_Master_SSH_Command_Execution() {
 function Show_LB_Status() {
   # Lets display records from the LB database:
   echo 
-  echo "Displaying data from the table 'ServiceToEndPointsMapping' , from the 'main' database:"
+  echo "Displaying data from the table 'Services' , from the 'main' database:"
   echo "--------------------------------------------------------------------------------------"
-  sqlite3 $LB_DATABASE "select * from ServiceToEndPointsMapping;"
+  sqlite3 $LB_DATABASE "select * from Services;"
   echo "--------------------------------------------------------------------------------------"
   echo 
 }
@@ -114,13 +114,28 @@ function Show_LB_Status() {
 
 function Services_Info_Table() {
   OPERATION=$1
-  # This function builds the information table in the SQL DB. 
 
-  # Reset IFS to null. Sometimes IFS can be a pain in the ***
-  IFS=''
+  ########################################################################################################
+  #
+  # Why not start creating the haproxy conf file straight away?!
+  #
+  TEMP_HAPROXY_CONF="/tmp/haproxy-loadbalancer.cfg"
 
-  # SERVICE_LIST=$(ssh ${MASTER_USER}@${MASTER_IP} "kubectl get services --all-namespaces=true | egrep -v '<none>|AGE'" | tr '\n' '\n\r')
-  SERVICE_LIST=$(ssh -n ${MASTER_USER}@${MASTER_IP} "kubectl get services --all-namespaces=true | egrep -v '<none>|AGE'" )
+  if [ -r $TEMP_HAPROXY_CONF ] ; then
+    rm -f $TEMP_HAPROXY_CONF
+    touch $TEMP_HAPROXY_CONF
+  fi
+
+  # Here we create a config file , which will later on be matched with the running config file (in another function).
+  cp haproxy-global-default.cfg $TEMP_HAPROXY_CONF
+
+  #  
+  #
+  ########################################################################################################
+
+  # SERVICE_LIST=$(ssh -o ConnectTimeout=5 ${MASTER_USER}@${MASTER_IP} "kubectl get services --all-namespaces=true | egrep -v '<none>|AGE'" | tr '\n' '\n\r')
+  SERVICE_LIST=$(ssh -o ConnectTimeout=5 -n ${MASTER_USER}@${MASTER_IP} "kubectl get services --all-namespaces=true | egrep -v '<none>|AGE'" )
+
   # Be careful: SSH reads from standard input and eats all remaining lines. Use ssh -n
   # Tip: from http://stackoverflow.com/questions/9393038/ssh-breaks-out-of-while-loop-in-bash
 
@@ -129,73 +144,247 @@ function Services_Info_Table() {
 
   # Tip from: http://stackoverflow.com/questions/10929453/read-a-file-line-by-line-assigning-the-value-to-a-variable
   echo "Following services were found with external IPs - on Kubernetes master ..."
-  echo "-----------------------------------------------------------------------------------------------"
+
+
+  ORIG_IFS=$IFS
+
+  # Set IFS to null. This is needed for the loop below to work and separate services into separate lines/records.
+  IFS=''
 
   # Sometimes for does not work as expected with output of other programs, such as sqlite.
   # use while intead  # for LINE in  $SERVICE_LIST; do
+
   echo $SERVICE_LIST | while IFS='' read -r SERVICE_LINE || [[ -n "$SERVICE_LINE" ]]; do
-    echo $SERVICE_LINE
-    if [ "$OPERATION" == "insert" ]; then
-      # echo "******** Inserting record: $SERVICE_LINE"
-      INSERT_SERVICE_RECORD_IN_DB $SERVICE_LINE
+
+    # Not possible to have  summarzed IP info from kubectl for this service, 
+    # because we do not have a namespace and service name yet. We just have one long line.
+
+    echo "===================================================================================================="
+    echo "${SERVICE_LINE}"
+    # echo "--------------------------------------------------------------------------------------------------"
+    if [ "$OPERATION" == "create" ]; then
+      # echo "******** Displaying record: $SERVICE_LINE"
+      CREATE_SERVICE_SECTION_IN_HAPROXY $SERVICE_LINE
     fi
   done
-}
 
-#---------------------------------------------
-
-function FIND_SERVICE_ENDPOINTS() {
-  # ORIG_IFS=$IFS
-  # This function describes a service and extracts endpoints information, which is then inserted into the main DB table.
-  # Receives two variables as parameters - namespace and service.
-  NAMESPACE=$1
-  SERVICE=$2
-
-  # Tip from: http://stackoverflow.com/questions/9393038/ssh-breaks-out-of-while-loop-in-bash
-  MYENDPOINTS=$(ssh -n ${MASTER_USER}@${MASTER_IP} "kubectl --namespace=${NAMESPACE} describe service ${SERVICE}  | grep 'Endpoints:'" | awk '{print $2}')
-  echo "${MYENDPOINTS}"
-  # IFS=$ORIG_IFS
+  IFS=$ORIG_IFS
 }
 
 
 #---------------------------------------------
 
-function INSERT_SERVICE_RECORD_IN_DB() {
-  # This function expects a record input as $1. It breaks it down into fields and then adds that to the datbase.
+function CREATE_SERVICE_SECTION_IN_HAPROXY() {
+  # This function expects a single record as input - as $1. It breaks it down into fields and then adds that to the database.
   SERVICE_RECORD=$1
-  # Set Input Field Separator to a space.
+  # Set Input Field Separator to a space because output of "kubectl get services" (each line) is separated by space.
   ORIG_IFS=$IFS
+
+  # Set IFS to space beause the incomging service record is the output from kubectl and has spaces as field delimiter.
   IFS=' '
+
   # break a record fields into separate variables.
   set $SERVICE_RECORD
+
   # We know that format of a record is:
   # NAMESPACE  SERVICENAME  CLUSTER-IP  EXTERNAL-IP  PORT(S)  AGE
   # $1         $2           $3          $4           $5       $6
+
   NAMESPACE_NAME=$1
   SERVICE_NAME=$2
   CLUSTER_IP=$3
   EXTERNAL_IP=$4
   PORTS=$5
-  FOUND_END_POINTS=""
 
-  # Just before we insert these values in the db table, we need to find the Endpoints, so we can add complete information in one go.
-  # FIND_SERVICE_ENDPOINTS $NAMESPACE_NAME $SERVICE_NAME 
-  FOUND_END_POINTS=$(FIND_SERVICE_ENDPOINTS $NAMESPACE_NAME $SERVICE_NAME)
-  # echo "FOUND the END POINTS as: $FOUND_END_POINTS"
+  # Reset IFS immediately after the record breakup into separate variables is done.
+  IFS=$ORIG_IFS
 
-  # Insert these values (including Endpoints information) in the database table (skipping AGE):
-  echo -n "Inserting in database, with endpoints: $FOUND_END_POINTS"
-  sqlite3 $LB_DATABASE \
-	"insert into ServiceToEndPointsMapping values(\"$NAMESPACE_NAME\",\"$SERVICE_NAME\",\"$CLUSTER_IP\",\"$EXTERNAL_IP\",\"$PORTS\",\"$FOUND_END_POINTS\");"
-  if [ $? -eq 0 ]; then
-    echo "... INSERTED!"
-  else
-    echo "... INSERT failed!"
-  fi 
-  # Reset IFS, otherwise it messes up with the parent function if it is being used there.
+  # Debug - Works beautifully till this point. Services go into Services table as separate records.Good.
+  
+
+
+  #############################################################################################
+  #
+  # Instead of inserting into SQL DB, we can just create the conf file, straight away.
+  # code here.
+  # There can be multiple ports for one external IP such as a web server running both 80 and 443. Need to find a way to manage that.
+  # For now I will work with only one port.
+  # Ideally a separate service should be created to cater for each type of traffic/port type.
+
+  
+  PORT=$(echo $PORTS| cut -d '/' -f 1 | tr -d ' ')
+  echo "-----> Creating HA proxy section: ${NAMESPACE_NAME}-${SERVICE_NAME}-${PORT}"
+  echo "" >> $TEMP_HAPROXY_CONF
+  # In the following code, one line is for screen, and the other is for the haproxy conf file
+  echo "listen ${NAMESPACE_NAME}-${SERVICE_NAME}-${PORT}"
+  echo "listen ${NAMESPACE_NAME}-${SERVICE_NAME}-${PORT}" >> $TEMP_HAPROXY_CONF
+  echo "        bind ${EXTERNAL_IP}:${PORT}"
+  echo "        bind ${EXTERNAL_IP}:${PORT}" >> $TEMP_HAPROXY_CONF
+
+  #  
+  #
+  #############################################################################################
+
+  # Now add Endpoints to this service, which are obtained separately by using the call to apiserver's http interface.
+  POPULATE_SERVICE_ENDPOINTS $NAMESPACE_NAME $SERVICE_NAME 
+}
+
+#---------------------------------------------
+
+function POPULATE_SERVICE_ENDPOINTS() {
+  ORIG_IFS=$IFS
+  # This function describes a service and extracts endpoints information, which is then inserted into the main DB table.
+  # Receives two variables as parameters - namespace and service.
+  NAMESPACE=$1
+  SERVICE=$2
+  ENDPOINTS_IPS=$(ssh -o ConnectTimeout=5 -n ${MASTER_USER}@${MASTER_IP} "curl -k -s  http://localhost:8080/api/v1/namespaces/${NAMESPACE}/endpoints/${SERVICE}" | egrep -w 'ip' | sed  -e 's/\"//g'  -e 's/ip://g' -e 's/,//g' | tr -d ' ' | tr '\n' ' ' )
+
+  ENDPOINTS_PORT=$(ssh -o ConnectTimeout=5 -n ${MASTER_USER}@${MASTER_IP} "curl -k -s  http://localhost:8080/api/v1/namespaces/${NAMESPACE}/endpoints/${SERVICE}" | egrep -w 'port' | sed  -e 's/\"//g' -e 's/,//'  | cut -f 2  -d ':'  | tr -d ' '  )
+
+  # echo "Inserting Endpoints information in haproxy conf file ..."
+  # echo "ENDPOINTS_IPS are: oooo${ENDPOINTS_IPS}OOOO"
+  # echo "--------------------------------"
+  # echo "ENDPOINTS_PORT is: oooo${ENDPOINTS_PORT}OOOO"
+
+  IFS=' '
+  COUNTER=1
+
+  for i in ${ENDPOINTS_IPS[@]}; do 
+    echo "        server pod-${COUNTER} ${i}:${ENDPOINTS_PORT} check"
+    echo "        server pod-${COUNTER} ${i}:${ENDPOINTS_PORT} check" >> $TEMP_HAPROXY_CONF
+    let COUNTER++
+  done
+
   IFS=$ORIG_IFS
 }
 
+
+function COMPARE_CONFIG_FILES() {
+  # It is quite possible that the production config file does not exist when the script is run for the firt time,
+  #   such as on a fresh system. In that case checking for that file is not very meaningful. 
+  # It does become meaningful though in the subsequent runs, as we need to compare the files.
+
+  if [ -r $TEMP_HAPROXY_CONF ] && [ -r $PRODUCTION_HAPROXY_CONFIG ]; then
+    echo "Both config files - temp and running, are readable."
+    diff $TEMP_HAPROXY_CONF $PRODUCTION_HAPROXY_CONFIG
+    DIFFERENCE=$?
+    if [ $DIFFERENCE -gt 0 ]; then
+      echo "The running and genrated config files differ, so replacing file and reload haproxy service"
+      # but before that, we should setup the correct IP addresses on the correct ethernet interface.
+      ALIGN_IP_ADDRESSES
+      cp /etc/haproxy/haproxy.cfg ${PRODUCTION_HAPROXY_CONFIG}.bak
+      cp -f $TEMP_HAPROXY_CONF  $PRODUCTION_HAPROXY_CONFIG
+      service haproxy reload
+      # also log this in the loadbalancer log file.
+    else
+      echo "No difference found between the running config and the generated config. Skipping service reload and IP alignment."
+    fi
+  else
+    echo "One of the config files is missing or not readable!"
+  fi
+}
+
+
+function ALIGN_IP_ADDRESSES() {
+  # This function compares the IP addresses on the ethernet interface with the ones in the haproxy config.
+  echo "Aligning IP addresses ..."
+  echo "FOUND_INTERFACE: $FOUND_INTERFACE"
+  echo "FOUND_IP: $FOUND_IP"
+  echo "FOUND_SUBNET_BITS: $FOUND_SUBNET_BITS"
+
+}
+
+
+
+
+#---------------------------------------------
+
+function disabled_CREATE_HA_PROXY_CONFIG() {
+  ## This function is not used any more. 
+
+  TEMP_HAPROXY_CONF="/tmp/haproxy-loadbalancer.cfg"
+
+  if [ -r $TEMP_HAPROXY_CONF ] ; then
+    rm -f $TEMP_HAPROXY_CONF
+    touch $TEMP_HAPROXY_CONF
+  fi 
+
+  # Here we create a config file , which will later on be matched with the running config file (in another function). 
+  cp haproxy-global-default.cfg $TEMP_HAPROXY_CONF
+  
+  # We need to translate the | signs from the sql output into space, so later we can break the record into individual values. 
+
+  # This commented line works independently of setting IFS again in the loop 
+  # sqlite3 $LB_DATABASE "select * from Services ;" | tr '|' ' ' | while IFS='' read -r SERVICE_LINE || [[ -n "$SERVICE_LINE" ]]; do
+
+  # The sqlite command below needs a secondary IFS=\| in the main loop.
+  sqlite3 $LB_DATABASE "select * from Services ;" | while IFS='' read -r SERVICE_LINE || [[ -n "$SERVICE_LINE" ]]; do
+    ORIG_IFS=$IFS
+    IFS=\|
+    echo $SERVICE_LINE
+    set $SERVICE_LINE
+    echo "$1, $2, $3, $4, $5, $6" 
+    NAMESPACE=$1
+    SERVICE=$2
+    CLUSTERIP=$3
+    EXTERNALIP=$4
+    PORTS=$5
+    # There can be multiple ports for one external IP such as a web server running both 80 and 443. Need to find a way to manage that.
+    # For now I will work with only one port.
+    # Ideally a separate service should be created to cater for each type of traffic/port type. 
+    PORT=$(echo $PORTS| cut -d '/' -f 1)
+    echo "-------------------------------------------------"
+    echo "" >> $TEMP_HAPROXY_CONF
+    echo "listen ${NAMESPACE}-${SERVICE}-${PORT}" >> $TEMP_HAPROXY_CONF
+    # Is there a way to pass a tab in echo?
+    echo "      bind ${EXTERNALIP}:${PORT}" >> $TEMP_HAPROXY_CONF
+    # Endpoints are obtained separately by using the call to apiserver's http interface. 
+    # It is because the endpoints shown in the kubectl describe service command are limited and more than three endpoints
+    # are hidden/replaced by "+3 more", etc, which is VERY stupid. 
+
+    # The function below will talk to api server over ssh , gather neessary information about endpoints, and write a config file.
+    # I need to pass NameSpace and Service names to this function
+    WRITE_ENDPOINTS_IN_CONFIG $NAMESPACE, $SERVICE
+    echo "--------------------------------------------------"
+    IFS=$ORIG_IFS
+  done
+
+}
+
+
+# ------------------------------------
+
+function disabled_WRITE_ENDPOINTS_IN_CONFIG() {
+  # This function is not used anymore.
+  NAMESPACE=$1
+  SERVICENAME=$2
+
+
+  # SSH to apiserver, get endpoints from api's http interface and parse the options:
+  # ENDPOINTS_IPS=$(ssh -o ConnectTimeout=5 -n ${MASTER_USER}@${MASTER_IP} "curl -k -s  http://localhost:8080/api/v1/namespaces/${NAMESPACE}/endpoints/${SERVICENAME}" | egrep -w 'ip' | sed  -e 's/\"//g'  -e 's/ip://g' -e 's/,//g' ) 
+  # ENDPOINTS_PORT=$(ssh -o ConnectTimeout=5 ${MASTER_USER}@${MASTER_IP "curl -k -s  http://localhost:8080/api/v1/namespaces/${NAMESPACE}/endpoints/${SERVICENAME}" | egrep -w 'port' | sed  -e 's/\"//g' -e 's/,//'  | cut -f 2  -d ':' )
+
+  # Use the database table to extract endpoints information and write configs
+  sqlite3 $LB_DATABASE "select * from ServiceEndPoints where NameSpace=\'$NAMESPACE\' and ServiceName=\'$SERVICENAME\' ;" | while IFS='' read -r ENDPOINT_LINE || [[ -n "$ENDPOINT_LINE" ]]; do
+    #ORIG_IFS=$IFS
+    #IFS=\|
+    echo "Display w/o Insert: $ENDPOINT_LINE"
+    # set $ENDPOINT_LINE
+    echo " --------------------------------------"
+  done
+
+
+
+  # original code:
+  # ORIG_IFS=$IFS
+  # IFS=','
+  # COUNTER=1
+  # for ENDPOINT in ${ENDPOINTS_IPS[@]}; do
+  #   echo "        server pod-${COUNTER} ${ENDPOINT}:${ENDPOINTS_PORT} check" >> $TEMP_HAPROXY_CONF
+  #   let COUNTER++
+  # done
+  # IFS=$ORIG_IFS
+}
 
 
 #
@@ -210,6 +399,7 @@ echo "Starting Sanity checks ..."
 Check_LB_IP
 
 Check_FLANNEL
+
 
 Check_Database
 
@@ -236,9 +426,10 @@ echo "Sanity checks completed successfully!"
 echo
 echo "Beginning execution of main program ..."
 case $1 in 
-add)
-  Message="Add a mapping."
-  Services_Info_Table insert
+create)
+  Message="Create new haproxy configuration."
+  Services_Info_Table create
+  COMPARE_CONFIG_FILES
   ;;
 delete)
   Message="Delete a mapping."
@@ -248,23 +439,34 @@ update)
   ;;
 show)
   Message="Show a mapping."
-  Show_LB_Status
-  Services_Info_Table
+  # The LB DB is only for it's internal working. There is no need to show a DB, which may have no records, 
+  # or records, which are now not in sync with current cluster/services state.
+  # Show_LB_Status
+  Services_Info_Table show
+  ;;
+create-config)
+  CREATE_HA_PROXY_CONFIG
   ;;
 *)
-  Message="You need to use one of the operations: add|delete|update|show"
+  Message="You need to use one of the operations: create|delete|update|show"
   ;;
 esac
 
-echo $Message
+echo ""
+echo "oooooooooooooooooooo $Message - Operation completed. oooooooooooooooooooo" 
 
 echo
 
 echo "TODO:"
 echo "-----"
-echo "* Add test for flannel interface to be up"
-echo "* Add check for the LB primary IP. If it is found in kubernetes service definitions on master, abort program and as user to fix that first. LB Primary IP must not be used as a external IP in any of the services."
-echo "* Use local kubectl instead of SSHing into Master"
+echo "* - Compare temporary haproxy conf with the one which is running. If different replace the conf file and reload service. "
+echo "* - Add IP management on the LB PRIMARY interface."
+echo "* - Use [root@loadbalancer ~]# curl -k -s -u vagrant:vagrant  https://10.245.1.2/api/v1/namespaces/default/endpoints/apache | grep ip"
+echo "    The above is better to use instead of getting endpoints from kubectl, because kubectl only shows 2-3 endpoints and says +XX more..."
+echo "* - Create multiple listen sections depending on the ports of a service. such as 80, 443 for web servers. This may be tricky. Or there can be two bind commands in one listen directive/section."
+echo "* - Add test for flannel interface to be up"
+echo "* - Add check for the LB primary IP. If it is found in kubernetes service definitions on master, abort program and as user to fix that first. LB Primary IP must not be used as a external IP in any of the services."
+echo "* - Use local kubectl instead of SSHing into Master"
 echo
 #
 ##### END - PROGRAM CODE ###################
