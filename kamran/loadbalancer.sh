@@ -11,7 +11,7 @@ else
   source ./loadbalancer.conf
 fi
 
-
+# Note: echolog is a function, which echo's a string and also logs it in the LB_LOG_FILE
 
 ###### START - FUNCTIONS ##################
 
@@ -20,16 +20,31 @@ function CHECK_FLANNEL() {
 
   echo
   echo "Checking Flannel service (flanneld) ..."
-  FLANNEL_PID=$(pidof flanneld) 
-  if [ -z ${FLANNEL_PID} ]; then
-    echo "Something is wrong with flannel service. It needs to be running before the loadbalancer could work. Please check."
+  # The pidof mechanism is not very helpful. It is quite possible that flannel service might be trying to start,
+  #   but failing for some reason, as it may not be able to connect to the etcd service for whatever reason.
+  #   At that instance, if this script runs and pidof test is run, it just sees a process with a name flanneld running,
+  #   it does not know if it has started successfully, or still trying. 
+  #   For this reason, pidof is not such a nice test. I would use service status with error code higher than 0 as error.
+
+  ## FLANNEL_PID=$(pidof flanneld) 
+  systemctl status flanneld > /dev/null
+  FLANNEL_ERROR_CODE=$?
+
+
+  if [ ${FLANNEL_ERROR_CODE} -gt 0 ]; then
+    echolog "Something is wrong with flannel service. It needs to be running before the loadbalancer could work. Please check."
     echo
     exit 9
   else
     # If reached here, it means flannel is running. What IP does it have? Just for information to the sysadmin.
     # Remember it is a /16 IP ADDRESS, not a NETWORK ADDRESS.
     FLANNEL_IP=$(ip addr show dev flannel0 | grep -w inet | awk '{print $2}')
-    echo "Flannel service (flanneld) seems to be running with the IP address of ${FLANNEL_IP}"
+    if [ -z "$FLANNEL_IP" ]; then
+      echolog "Apparently Flannel service is running but we could not obtain IP address of flannel0 interface. Please check."
+      exit 9
+    else
+      echolog "Flannel service (flanneld) seems to be running with the IP address of ${FLANNEL_IP}"
+    fi
     echo
   fi
 
@@ -40,8 +55,8 @@ function CHECK_FLANNEL() {
 #---------------------------------------------
 
 function Check_LB_IP() {
-  if [ -z $LB_PRIMARY_IP ]; then
-    echo "LB_PRIMARY_IP cannot be empty. This needs to be IP of an interface on LB, which is never to be shutdown."
+  if [ -z "$LB_PRIMARY_IP" ]; then
+    echolog "LB_PRIMARY_IP cannot be empty. This needs to be IP of an interface on LB, which is never to be shutdown."
     exit 1
   fi
 
@@ -52,7 +67,7 @@ function Check_LB_IP() {
 
   if [ "$LB_PRIMARY_IP" != "$FOUND_IP" ]; then
     echo
-    echo "The IP you provided as LB_PRIMARY_IP (${LB_PRIMARY_IP}) in the conf file, is not found on this load balancer system. Please check."
+    echolog "The IP you provided as LB_PRIMARY_IP (${LB_PRIMARY_IP}) in the conf file, is not found on this load balancer system. Please check."
     exit 1
   fi
 
@@ -73,11 +88,11 @@ function CHECK_KUBE_SERVICE_FOR_LB_IP() {
   # THe double quotes in the test are important.
   if [ ! -z "${SERVICE_WITH_PRIMARY_LB_IP}" ]; then
     echo
-    echo "Some service in Kubernetes has it's External-IP set as the primary IP address of the load-balancer (${LB_PRIMARY_IP}) ."
-    echo "This is not permitted. You should find an available IP address from the available pool of IPs and assign those IPs to your services when exposing them."
+    echolog "Some service in Kubernetes has it's External-IP set as the primary IP address of the load-balancer (${LB_PRIMARY_IP}) ."
+    echolog "This is not permitted. You should find an available IP address from the available pool of IPs and assign those IPs to your services when exposing them."
     echo
-    echo "Here is the problematic service from kubernetes master:"
-    echo ${SERVICE_WITH_PRIMARY_LB_IP}
+    echolog "Here is the problematic service from kubernetes master:"
+    echolog "${SERVICE_WITH_PRIMARY_LB_IP}"
     echo
     exit 9
   fi 
@@ -88,7 +103,9 @@ function CHECK_KUBE_SERVICE_FOR_LB_IP() {
 
 #---------------------------------------------
 
-function Check_Database() {
+function disabled_Check_Database() {
+  # This fnction is disabled and can be removed.
+
   # Check if the Load Balancer's SQLite DB exists.
   echo
   if [ -r $LB_DATABASE ]; then
@@ -121,11 +138,11 @@ function Check_Master_SSH_Connectivity() {
   2>/dev/null >/dev/tcp/${REMOTESERVER}/${REMOTESSHPORT}
   if [ $? -gt 0 ]; then
     echo "No!"
-    echo "Kubernetes master: ${REMOTESERVER} was not reachable on SSH (port ${REMOTESSHPORT}). Please check."
+    echolog "Kubernetes master: ${REMOTESERVER} was not reachable on SSH (port ${REMOTESSHPORT}). Please check."
     exit 2
   else
     echo "Yes!"
-    echo "Success connecting to Kubernetes master ${REMOTESERVER} on port ${REMOTESSHPORT}."
+    echolog "Success connecting to Kubernetes master ${REMOTESERVER} on port ${REMOTESSHPORT}."
   fi
 }
 
@@ -141,7 +158,7 @@ function Check_Master_SSH_Command_Execution() {
   ssh -o ConnectTimeout=5 ${MASTER_USER}@${MASTER_IP} "$1"
 
   if [ $? -gt 0 ]; then
-    echo "There was a problem running '$1' through ${MASTER_USER}@${MASTER_IP} over SSH. Please check."
+    echolog "There was a problem running '$1' through ${MASTER_USER}@${MASTER_IP} over SSH. Please check."
     exit 9
   fi
 }
@@ -149,7 +166,9 @@ function Check_Master_SSH_Command_Execution() {
 
 #---------------------------------------------
 
-function Show_LB_Status() {
+function disabled_Show_LB_Status() {
+  # This function is disabled and can be removed.
+
   # Lets display records from the LB database:
   echo 
   echo "Displaying data from the table 'Services' , from the 'main' database:"
@@ -193,7 +212,7 @@ function Services_Info_Table() {
   # (Actually it turned out to be a problem caused by SSH. but ayway). 
 
   # Tip from: http://stackoverflow.com/questions/10929453/read-a-file-line-by-line-assigning-the-value-to-a-variable
-  echo "Following services were found with external IPs - on Kubernetes master ..."
+  echolog "Following services were found with external IPs - on Kubernetes master ..."
 
 
   ORIG_IFS=$IFS
@@ -210,7 +229,7 @@ function Services_Info_Table() {
     # because we do not have a namespace and service name yet. We just have one long line.
 
     echo "===================================================================================================="
-    echo "${SERVICE_LINE}"
+    echolog "${SERVICE_LINE}"
     # echo "--------------------------------------------------------------------------------------------------"
     if [ "$OPERATION" == "create" ]; then
       # echo "******** Displaying record: $SERVICE_LINE"
@@ -325,11 +344,11 @@ function COMPARE_CONFIG_FILES() {
 
     if [ $DIFFERENCE -gt 0 ]; then
 
-      echo "The generated and running (haproxy) config files differ. Replacing the running haproxy file with the newly generated one, and reloading haproxy service ..."
+      echolog "The generated and running (haproxy) config files differ. Replacing the running haproxy file with the newly generated one, and reloading haproxy service ..."
       cp /etc/haproxy/haproxy.cfg ${PRODUCTION_HAPROXY_CONFIG}.bak
       cp -f $TEMP_HAPROXY_CONF  $PRODUCTION_HAPROXY_CONFIG
     else
-      echo "No difference found between generated and running config."
+      echolog "No difference found between generated and running config."
     fi
 
     # It is possible that the script is running for the first time, and haproxy service is not running already.
@@ -338,24 +357,30 @@ function COMPARE_CONFIG_FILES() {
 
     echo
     echo "Checking/managing HA Proxy service ..."
-    HAPROXY_PID=$(pidof haproxy-systemd-wrapper)
-    if [ -z ${HAPROXY_PID} ]; then
+    # pidof is not being used in favor of the error code recieved by service's status command. 
+    # This is explained in length in the CHECK_FLANNEL section. 
+    ## HAPROXY_PID=$(pidof haproxy-systemd-wrapper)
+
+    systemctl status haproxy > /dev/null
+    HAPROXY_ERROR_CODE=$?
+
+    # if [ -z "${HAPROXY_PID}" ]; then
+    if [ ${HAPROXY_ERROR_CODE} -gt 0 ]; then
       # In this case, it doesn't matter if the config files are same. The service itself is down and needs to be up.
-      echo -n "HA Proxy process was not running on this system. Starting it ..."
       systemctl start haproxy 
       if [ $? -eq 0 ]; then
-        echo "Started."
+        echolog  "HA Proxy process was not running on this system. Starting the service ... Successful."
       else
-        echo "Failed !"
+        echolog  "HA Proxy process was not running on this system. Starting the service ... Failed!"
       fi
     else
       # Once we reach here, check if there were differences , on then we reload service, otherwise we don't.
       if [ $DIFFERENCE -gt 0 ]; then
         # Found differences, and service already running, so reload it.
-        echo "HA Proxy already running on this system. Reloading it ..."
+        echolog "HA Proxy already running on this system. Reloading it ..."
         service haproxy reload
       else
-        echo "HA Proxy already running on this system. Configuration unchanged. Reload is not required."
+        echolog "HA Proxy already running on this system. Configuration unchanged. Reload is not required."
       fi
     fi
 
@@ -364,7 +389,7 @@ function COMPARE_CONFIG_FILES() {
     # IP allignment may be needed even if the config files match. So we have to run IP Alignment routine in any case.
     ALIGN_IP_ADDRESSES
   else
-    echo "One of the config files is missing or not readable! Ideally this should never happen!"
+    echolog "One of the config files is missing or not readable! Ideally this should never happen! If it does the script code is broken for this scenario! [FIXIT]"
   fi
 }
 
@@ -382,21 +407,19 @@ function ALIGN_IP_ADDRESSES() {
   # The command below finds the lines with leading spaces, and then removes the leading spaces to create a list of IPs. 
   IPsToAdd=$(comm -3 /tmp/IPs_from_interface.txt /tmp/IPs_from_haproxy_config.txt | grep "[[:space:]]"  | sed 's/^[[:space:]]//')
   for i in ${IPsToRemove}; do
-    echo -n "Removing IP address ${i} from the interface ${FOUND_INTERFACE} ..."
+    echolog "Removing IP address ${i} from the interface ${FOUND_INTERFACE}."
     ip addr del ${i}/${FOUND_SUBNET_BITS} dev ${FOUND_INTERFACE}
-    echo " Done!"
   done
 
   for i in ${IPsToAdd}; do
-    echo -n "Adding IP address ${i} to the interface ${FOUND_INTERFACE} ..."
+    echolog  "Adding IP address ${i} to the interface ${FOUND_INTERFACE}."
     ip addr add ${i}/${FOUND_SUBNET_BITS} dev ${FOUND_INTERFACE}
-    echo " Done!"
   done
   echo
   echo "Here is the final status of the network interface ${FOUND_INTERFACE} :"
-  echo "----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------------------------"
   ip addr show dev $FOUND_INTERFACE
-  echo "----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------------------------"
   echo
 
 }
@@ -429,7 +452,7 @@ function AVAILABLE_IPS() {
 
 
 function disabled_CREATE_HA_PROXY_CONFIG() {
-  ## This function is not used any more. 
+  ## This function is not used any more, and can be removed.
 
   TEMP_HAPROXY_CONF="/tmp/haproxy-loadbalancer.cfg"
 
@@ -483,8 +506,18 @@ function disabled_CREATE_HA_PROXY_CONFIG() {
 
 # ------------------------------------
 
+function echolog() {
+  MESSAGE=$1
+  TIMESTAMP=$(date +'%b %d %T')
+  echo "${MESSAGE}"
+  echo "${TIMESTAMP} ${MESSAGE}" >> $LB_LOG_FILE 
+}
+
+
+# ------------------------------------
+
 function disabled_WRITE_ENDPOINTS_IN_CONFIG() {
-  # This function is not used anymore.
+  # This function is not used anymore, and can be removed.
   NAMESPACE=$1
   SERVICENAME=$2
 
@@ -529,19 +562,18 @@ Check_LB_IP
 
 CHECK_FLANNEL
 
-
 ## Check_Database
 
 Check_Master_SSH_Connectivity
+
 Check_Master_SSH_Command_Execution "uptime"
 
 # cs is abbreviation of componentstatuses! 
+
 Check_Master_SSH_Command_Execution "kubectl get cs"
 
 CHECK_KUBE_SERVICE_FOR_LB_IP
 
-# Showing status is not actually a sanity check ...
-# Show_LB_Status
 
 echo
 echo "Sanity checks completed successfully!"
@@ -562,12 +594,6 @@ create)
   Services_Info_Table create
   COMPARE_CONFIG_FILES
   ;;
-delete)
-  Message="Delete a mapping."
-  ;;
-update)
-  Message="Update a mapping."
-  ;;
 show)
   Message="Show a mapping."
   # The LB DB is only for it's internal working. There is no need to show a DB, which may have no records, 
@@ -576,11 +602,8 @@ show)
   Services_Info_Table show
   AVAILABLE_IPS
   ;;
-create-config)
-  CREATE_HA_PROXY_CONFIG
-  ;;
 *)
-  Message="You need to use one of the operations: create|delete|update|show"
+  Message="You need to use one of the operations: create|show"
   ;;
 esac
 

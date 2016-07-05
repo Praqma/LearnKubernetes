@@ -239,6 +239,34 @@ In the commands above:
 Simple!
 
 =================== 
+ip addr show dev flannel0 | grep -w inet | awk '{print $2}'
+
+
+[root@loadbalancer ~]# service flanneld stop
+Redirecting to /bin/systemctl stop  flanneld.service
+[root@loadbalancer ~]# systemctl status flanneld
+● flanneld.service - Flanneld overlay address etcd agent
+   Loaded: loaded (/usr/lib/systemd/system/flanneld.service; enabled; vendor preset: disabled)
+   Active: inactive (dead) since Tue 2016-07-05 12:32:39 CEST; 2s ago
+  Process: 4121 ExecStartPost=/usr/libexec/flannel/mk-docker-opts.sh -k DOCKER_NETWORK_OPTIONS -d /run/flannel/docker (code=exited, status=0/SUCCESS)
+  Process: 4115 ExecStart=/usr/bin/flanneld -etcd-endpoints=${FLANNEL_ETCD} -etcd-prefix=${FLANNEL_ETCD_KEY} $FLANNEL_OPTIONS (code=exited, status=0/SUCCESS)
+ Main PID: 4115 (code=exited, status=0/SUCCESS)
+
+Jul 05 12:32:16 loadbalancer.example.com flanneld[4115]: I0705 12:32:16.763309 04115 main.go:189] Using 192.168.121.201 as external endpoint
+Jul 05 12:32:16 loadbalancer.example.com flanneld[4115]: I0705 12:32:16.769289 04115 etcd.go:129] Found lease (10.246.49.0/24) for curr...eusing
+Jul 05 12:32:16 loadbalancer.example.com flanneld[4115]: I0705 12:32:16.770394 04115 etcd.go:84] Subnet lease acquired: 10.246.49.0/24
+Jul 05 12:32:16 loadbalancer.example.com flanneld[4115]: I0705 12:32:16.780730 04115 udp.go:222] Watching for new subnet leases
+Jul 05 12:32:16 loadbalancer.example.com systemd[1]: Started Flanneld overlay address etcd agent.
+Jul 05 12:32:16 loadbalancer.example.com flanneld[4115]: I0705 12:32:16.811391 04115 udp.go:247] Subnet added: 10.246.55.0/24
+Jul 05 12:32:16 loadbalancer.example.com flanneld[4115]: I0705 12:32:16.811474 04115 udp.go:247] Subnet added: 10.246.82.0/24
+Jul 05 12:32:39 loadbalancer.example.com systemd[1]: Stopping Flanneld overlay address etcd agent...
+Jul 05 12:32:39 loadbalancer.example.com flanneld[4115]: I0705 12:32:39.297367 04115 main.go:292] Exiting...
+Jul 05 12:32:39 loadbalancer.example.com systemd[1]: Stopped Flanneld overlay address etcd agent.
+Hint: Some lines were ellipsized, use -l to show in full.
+[root@loadbalancer ~]# echo $?
+3
+
+
 
 
 
