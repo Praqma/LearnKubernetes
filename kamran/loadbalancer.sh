@@ -15,6 +15,30 @@ fi
 
 ###### START - FUNCTIONS ##################
 
+function CHECK_FLANNEL() {
+  # This function checks if flannel service is running. If not, it exists complaining so.
+
+  echo
+  echo "Checking Flannel service (flanneld) ..."
+  FLANNEL_PID=$(pidof flanneld) 
+  if [ -z ${FLANNEL_PID} ]; then
+    echo "Something is wrong with flannel service. It needs to be running before the loadbalancer could work. Please check."
+    echo
+    exit 9
+  else
+    # If reached here, it means flannel is running. What IP does it have? Just for information to the sysadmin.
+    # Remember it is a /16 IP ADDRESS, not a NETWORK ADDRESS.
+    FLANNEL_IP=$(ip addr show dev flannel0 | grep -w inet | awk '{print $2}')
+    echo "Flannel service (flanneld) seems to be running with the IP address of ${FLANNEL_IP}"
+    echo
+  fi
+
+
+
+}
+
+#---------------------------------------------
+
 function Check_LB_IP() {
   if [ -z $LB_PRIMARY_IP ]; then
     echo "LB_PRIMARY_IP cannot be empty. This needs to be IP of an interface on LB, which is never to be shutdown."
@@ -22,9 +46,9 @@ function Check_LB_IP() {
   fi
 
   # See if the LB_PRIMARY_IP is found on one of the interfaces of the local system, and which interface is it? :
-  FOUND_IP=$(ip addr | grep -w $LB_PRIMARY_IP | sed 's/.*inet \(.*\)\/.*$/\1/')
-  FOUND_SUBNET_BITS=$(ip addr | grep -w $LB_PRIMARY_IP | sed 's/.*\/\(.*\) brd .*$/\1/')
-  FOUND_INTERFACE=$(ip addr | grep -w $LB_PRIMARY_IP | sed 's/.* global \(.*\)$/\1/')
+  FOUND_IP=$(ip addr | egrep -w -v 'secondary|forever|inet6|link' | grep -w $LB_PRIMARY_IP | sed 's/.*inet \(.*\)\/.*$/\1/')
+  FOUND_SUBNET_BITS=$(ip addr | egrep -w -v 'secondary|forever|inet6|link' | grep -w $LB_PRIMARY_IP | sed 's/.*\/\(.*\) brd .*$/\1/')
+  FOUND_INTERFACE=$(ip addr | egrep -w -v 'secondary|forever|inet6|link' | grep -w $LB_PRIMARY_IP | sed 's/.* global \(.*\)$/\1/')
 
   if [ "$LB_PRIMARY_IP" != "$FOUND_IP" ]; then
     echo
@@ -36,6 +60,30 @@ function Check_LB_IP() {
   LB_PRIMARY_IP_INTERFACE=$FOUND_INTERFACE
 
 }
+
+
+#---------------------------------------------
+
+function CHECK_KUBE_SERVICE_FOR_LB_IP() {
+  # If Any of the Kubernetes service is using our load balancer's primary IP, then fail the script.
+  # We do not want anyone to use our primary LB IP in kubernetes services.
+
+
+  SERVICE_WITH_PRIMARY_LB_IP=$(ssh -o ConnectTimeout=5 -n ${MASTER_USER}@${MASTER_IP} "kubectl get services --all-namespaces=true | egrep -v '<none>|AGE' | grep $LB_PRIMARY_IP" )
+  # THe double quotes in the test are important.
+  if [ ! -z "${SERVICE_WITH_PRIMARY_LB_IP}" ]; then
+    echo
+    echo "Some service in Kubernetes has it's External-IP set as the primary IP address of the load-balancer (${LB_PRIMARY_IP}) ."
+    echo "This is not permitted. You should find an available IP address from the available pool of IPs and assign those IPs to your services when exposing them."
+    echo
+    echo "Here is the problematic service from kubernetes master:"
+    echo ${SERVICE_WITH_PRIMARY_LB_IP}
+    echo
+    exit 9
+  fi 
+}
+
+
 
 
 #---------------------------------------------
@@ -72,10 +120,12 @@ function Check_Master_SSH_Connectivity() {
 
   2>/dev/null >/dev/tcp/${REMOTESERVER}/${REMOTESSHPORT}
   if [ $? -gt 0 ]; then
-    echo "No :( Kubernetes master: ${REMOTESERVER} was not reachable on SSH (port ${REMOTESSHPORT})"
+    echo "No!"
+    echo "Kubernetes master: ${REMOTESERVER} was not reachable on SSH (port ${REMOTESSHPORT}). Please check."
     exit 2
   else
-    echo "Yes! :) Success connecting to Kubernetes master ${REMOTESERVER} on port ${REMOTESSHPORT} !"
+    echo "Yes!"
+    echo "Success connecting to Kubernetes master ${REMOTESERVER} on port ${REMOTESSHPORT}."
   fi
 }
 
@@ -261,36 +311,93 @@ function POPULATE_SERVICE_ENDPOINTS() {
 
 function COMPARE_CONFIG_FILES() {
   # It is quite possible that the production config file does not exist when the script is run for the firt time,
-  #   such as on a fresh system. In that case checking for that file is not very meaningful. 
+  #     such as on a fresh system. In that case checking for that file is not very meaningful. 
   # It does become meaningful though in the subsequent runs, as we need to compare the files.
 
+  echo
   if [ -r $TEMP_HAPROXY_CONF ] && [ -r $PRODUCTION_HAPROXY_CONFIG ]; then
-    echo "Both config files - temp and running, are readable."
+    echo "Comparing generated (haproxy) config with running config ..."
+    echo
     diff $TEMP_HAPROXY_CONF $PRODUCTION_HAPROXY_CONFIG
     DIFFERENCE=$?
+
+    echo
+
     if [ $DIFFERENCE -gt 0 ]; then
-      echo "The running and genrated config files differ, so replacing file and reload haproxy service"
-      # but before that, we should setup the correct IP addresses on the correct ethernet interface.
-      ALIGN_IP_ADDRESSES
+
+      echo "The generated and running (haproxy) config files differ. Replacing the running haproxy file with the newly generated one, and reloading haproxy service ..."
       cp /etc/haproxy/haproxy.cfg ${PRODUCTION_HAPROXY_CONFIG}.bak
       cp -f $TEMP_HAPROXY_CONF  $PRODUCTION_HAPROXY_CONFIG
-      service haproxy reload
-      # also log this in the loadbalancer log file.
     else
-      echo "No difference found between the running config and the generated config. Skipping service reload and IP alignment."
+      echo "No difference found between generated and running config."
     fi
+
+    # It is possible that the script is running for the first time, and haproxy service is not running already.
+    # In that case, we need to start the service.
+    # And, if haproxy is already running, just reload it. 
+
+    echo
+    echo "Checking/managing HA Proxy service ..."
+    HAPROXY_PID=$(pidof haproxy-systemd-wrapper)
+    if [ -z ${HAPROXY_PID} ]; then
+      # In this case, it doesn't matter if the config files are same. The service itself is down and needs to be up.
+      echo -n "HA Proxy process was not running on this system. Starting it ..."
+      systemctl start haproxy 
+      if [ $? -eq 0 ]; then
+        echo "Started."
+      else
+        echo "Failed !"
+      fi
+    else
+      # Once we reach here, check if there were differences , on then we reload service, otherwise we don't.
+      if [ $DIFFERENCE -gt 0 ]; then
+        # Found differences, and service already running, so reload it.
+        echo "HA Proxy already running on this system. Reloading it ..."
+        service haproxy reload
+      else
+        echo "HA Proxy already running on this system. Configuration unchanged. Reload is not required."
+      fi
+    fi
+
+    # also log this service restart thing in the loadbalancer log file.
+    # Setup the correct IP addresses on the correct ethernet interface.
+    # IP allignment may be needed even if the config files match. So we have to run IP Alignment routine in any case.
+    ALIGN_IP_ADDRESSES
   else
-    echo "One of the config files is missing or not readable!"
+    echo "One of the config files is missing or not readable! Ideally this should never happen!"
   fi
 }
 
 
 function ALIGN_IP_ADDRESSES() {
   # This function compares the IP addresses on the ethernet interface with the ones in the haproxy config.
-  echo "Aligning IP addresses ..."
-  echo "FOUND_INTERFACE: $FOUND_INTERFACE"
-  echo "FOUND_IP: $FOUND_IP"
-  echo "FOUND_SUBNET_BITS: $FOUND_SUBNET_BITS"
+  echo
+  echo "Aligning IP addresses on ${FOUND_INTERFACE}..."
+  # echo "Debug: FOUND_INTERFACE: $FOUND_INTERFACE"
+  # echo "Debug: FOUND_IP: $FOUND_IP"
+  # echo "Debug: FOUND_SUBNET_BITS: $FOUND_SUBNET_BITS"
+  ip addr show dev ${FOUND_INTERFACE} | grep secondary| awk '{print $2'}| cut -f1 -d '/' | sort -n > /tmp/IPs_from_interface.txt
+  grep bind $TEMP_HAPROXY_CONF | awk '{print $2'} | cut -f1 -d ':' | sort -n > /tmp/IPs_from_haproxy_config.txt
+  IPsToRemove=$(comm -3 /tmp/IPs_from_interface.txt /tmp/IPs_from_haproxy_config.txt | grep -v "[[:space:]]")
+  # The command below finds the lines with leading spaces, and then removes the leading spaces to create a list of IPs. 
+  IPsToAdd=$(comm -3 /tmp/IPs_from_interface.txt /tmp/IPs_from_haproxy_config.txt | grep "[[:space:]]"  | sed 's/^[[:space:]]//')
+  for i in ${IPsToRemove}; do
+    echo -n "Removing IP address ${i} from the interface ${FOUND_INTERFACE} ..."
+    ip addr del ${i}/${FOUND_SUBNET_BITS} dev ${FOUND_INTERFACE}
+    echo " Done!"
+  done
+
+  for i in ${IPsToAdd}; do
+    echo -n "Adding IP address ${i} to the interface ${FOUND_INTERFACE} ..."
+    ip addr add ${i}/${FOUND_SUBNET_BITS} dev ${FOUND_INTERFACE}
+    echo " Done!"
+  done
+  echo
+  echo "Here is the final status of the network interface ${FOUND_INTERFACE} :"
+  echo "----------------------------------------------------------------------"
+  ip addr show dev $FOUND_INTERFACE
+  echo "----------------------------------------------------------------------"
+  echo
 
 }
 
@@ -298,6 +405,28 @@ function ALIGN_IP_ADDRESSES() {
 
 
 #---------------------------------------------
+
+function AVAILABLE_IPS() {
+  # This function prints the top 10 IPs from the availble IPs. This helps in creating kubernets services with external-ips.
+  # Needs nmap to be installed on the load balancer.
+
+  # Generate a list of IPs which do not respond on nmap ping scan, and then remove the top and the bottom most lines 
+  #    from the output, because those are network and broadcast IPs - unsuable of-course. Display top 10 lines of the final output.
+  # Also nmap is intelligent to do a network scan if I provide it the target as myip/mysubnetbits .i,e 192.168.121.201/24 !
+  # That is a blessing!
+
+  echo 
+  echo "Here are Top 10 IPs from the available pool:"
+  echo "--------------------------------------------" 
+  nmap -v -sn -n ${LB_PRIMARY_IP}/${FOUND_SUBNET_BITS} -oG - | awk '/Status: Down/{print $2}' | sed '1,1d' | head --lines=-1 | head 
+  echo 
+}
+
+
+#---------------------------------------------
+
+
+
 
 function disabled_CREATE_HA_PROXY_CONFIG() {
   ## This function is not used any more. 
@@ -398,16 +527,18 @@ echo "Starting Sanity checks ..."
 
 Check_LB_IP
 
-Check_FLANNEL
+CHECK_FLANNEL
 
 
-Check_Database
+## Check_Database
 
 Check_Master_SSH_Connectivity
 Check_Master_SSH_Command_Execution "uptime"
 
 # cs is abbreviation of componentstatuses! 
 Check_Master_SSH_Command_Execution "kubectl get cs"
+
+CHECK_KUBE_SERVICE_FOR_LB_IP
 
 # Showing status is not actually a sanity check ...
 # Show_LB_Status
@@ -443,6 +574,7 @@ show)
   # or records, which are now not in sync with current cluster/services state.
   # Show_LB_Status
   Services_Info_Table show
+  AVAILABLE_IPS
   ;;
 create-config)
   CREATE_HA_PROXY_CONFIG
@@ -459,13 +591,14 @@ echo
 
 echo "TODO:"
 echo "-----"
-echo "* - Compare temporary haproxy conf with the one which is running. If different replace the conf file and reload service. "
-echo "* - Add IP management on the LB PRIMARY interface."
+# echo "* - Compare temporary haproxy conf with the one which is running. If different replace the conf file and reload service. "
+# echo "* - Add IP management on the LB PRIMARY interface."
+# echo "* - Check haproxy service in the beginning. It should be running. A stopped service cannot be reloaded."
 echo "* - Use [root@loadbalancer ~]# curl -k -s -u vagrant:vagrant  https://10.245.1.2/api/v1/namespaces/default/endpoints/apache | grep ip"
 echo "    The above is better to use instead of getting endpoints from kubectl, because kubectl only shows 2-3 endpoints and says +XX more..."
 echo "* - Create multiple listen sections depending on the ports of a service. such as 80, 443 for web servers. This may be tricky. Or there can be two bind commands in one listen directive/section."
-echo "* - Add test for flannel interface to be up"
-echo "* - Add check for the LB primary IP. If it is found in kubernetes service definitions on master, abort program and as user to fix that first. LB Primary IP must not be used as a external IP in any of the services."
+# echo "* - Add test for flannel interface to be up"
+# echo "* - Add check for the LB primary IP. If it is found in kubernetes service definitions on master, abort program and ask user to fix that first. LB Primary IP must not be used as a external IP in any of the services."
 echo "* - Use local kubectl instead of SSHing into Master"
 echo
 #
