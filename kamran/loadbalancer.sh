@@ -2,6 +2,7 @@
 # Author: Kamran Azeem (kaz@praqma.net)
 # Summary: This script sets up a load balancer using the information from a working kubernetes cluster. 
 # In case of conflict, the script adjusts load balancer, and not the kubernetes cluster.
+# The program lock file can be removed manually if it doesn't get deleted because of some weird reason.
 
 # Load the configuration variables from the conf file. The conf file is expected in /opt.
 if [ -r /opt/loadbalancer.conf ]; then 
@@ -12,6 +13,15 @@ else
 fi
 
 # Note: echolog is a function, which echo's a string and also logs it in the LB_LOG_FILE
+
+###### START - INTERNAL VARIABLES ########
+
+LOCK_FILE=/var/lock/loadbalancer
+
+
+
+###### END - INTERNAL VARIABLES ##########
+
 
 ###### START - FUNCTIONS ##################
 
@@ -549,12 +559,39 @@ function disabled_WRITE_ENDPOINTS_IN_CONFIG() {
 }
 
 
+# -----------------------------------------
+
+function CHECK_LOCK_FILE() {
+  # Check file lock. If some other instance of same program is running, exit this instance.
+  if [ -r ${LOCK_FILE} ]; then
+    echolog "Lock file exists: ${LOCK_FILE} . This means another instance of this program is running. Please ensure that only one instance of this program runs at any given time."
+    exit 9
+  else
+    LB_PID=$(pgrep -o  loadbalancer.sh)
+    echo "${LB_PID}" > ${LOCK_FILE}
+    echolog "Acquiring program lock with PID: ${LB_PID} , in lock file: ${LOCK_FILE}"
+  fi 
+
+}
+
+function DELETE_LOCK_FILE {
+  if [ -r ${LOCK_FILE} ]; then
+    echolog "Releasing progarm lock: ${LOCK_FILE}"
+    rm -f ${LOCK_FILE}
+  fi
+
+}
+
+
+
 #
 ###### END - FUNCTIONS ####################
 
 
 ###### START - SANITY CHECKS ##############
 #
+function SANITY_CHECKS() {
+# All sanity checks are combined into a function.
 echo
 echo "Starting Sanity checks ..."
 
@@ -574,9 +611,10 @@ Check_Master_SSH_Command_Execution "kubectl get cs"
 
 CHECK_KUBE_SERVICE_FOR_LB_IP
 
-
 echo
 echo "Sanity checks completed successfully!"
+echo 
+}
 #
 ###### END - SANITY CHECKS #################
 
@@ -587,29 +625,59 @@ echo "Sanity checks completed successfully!"
 
 #### START - PROGRAM CODE #################
 echo
-echo "Beginning execution of main program ..."
 case $1 in 
 create)
-  Message="Create new haproxy configuration."
+  Message="Create haproxy configuration."
+  echo "Beginning execution of main program - in $1 mode..."
+  echo
+  CHECK_LOCK_FILE 
+  SANITY_CHECKS
   Services_Info_Table create
   COMPARE_CONFIG_FILES
+  # Debug: sleep 10
+  DELETE_LOCK_FILE
   ;;
 show)
-  Message="Show a mapping."
+  Message="Show load balancer configuration and status."
   # The LB DB is only for it's internal working. There is no need to show a DB, which may have no records, 
   # or records, which are now not in sync with current cluster/services state.
   # Show_LB_Status
+  echo "Beginning execution of main program - in $1 mode..."
+  echo
+  echo "Showing status of service: haproxy"
+  echo "----------------------------------"
+  systemctl status haproxy -l
+  echo
+  echo "Showing status of service: flanneld"
+  echo "-----------------------------------"
+  systemctl status flanneld -l
+  echo
+  SANITY_CHECKS
   Services_Info_Table show
   AVAILABLE_IPS
   ;;
+tests)
+  Message="Show possible tests."
+  echo "You can perform the following tests / create following scenarios , before starting this script, to see if this script can hold up to what you throw at it."
+  echo "Note: All tests need to be performed passing 'create' as an argument to the script."
+  echo "1. Try to stop flanneld and haproxy services."
+  echo "2. Try to block SSh access to master node, or remove the public key of this server from the authorized_keys file on the master."
+  echo "3. Try changing the primary IP address of the load balancer in the loadbalancer.conf file"
+  echo "4. Try creating a service in kubernetes using the primary IP address of the load balancer."
+  echo "5. Try to add a few IP addresses (of the same IP scheme) on the same interface which has the primary IP address of the load balancer."
+  echo "   This should result in removal of these IP addresses from this interface when the script runs."
+  echo "6. Try to make any random modifications to the running haproxy config file - /etc/haproxy/haproxy.conf"
+  ;;
 *)
-  Message="You need to use one of the operations: create|show"
+  Message="Show help."
+  echo
+  echo "You need to use one of the operations: create|show|tests|help"
   ;;
 esac
 
 echo ""
 echo "oooooooooooooooooooo $Message - Operation completed. oooooooooooooooooooo" 
-
+echo "Logs are in: ${LB_LOG_FILE}"
 echo
 
 echo "TODO:"
