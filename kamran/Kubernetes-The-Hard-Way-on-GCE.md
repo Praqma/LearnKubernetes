@@ -1650,7 +1650,418 @@ worker3   Ready     9m
 [kamran@kworkhorse ~]$ 
 ```
 
+-------------
+
+# Managing the Container Network Routes
+
+Now that each worker node is online we need to add routes to make sure that Pods running on different machines can talk to each other. In this lab we are not going to provision any overlay networks and instead rely on Layer 3 networking. That means we need to add routes to our router. In GCP each network has a router that can be configured. If this was an on-prem datacenter then ideally you would need to add the routes to your local router.
 
 
 
+The first thing we need to do is gather the information required to populate the router table. We need the Internal IP address and Pod Subnet for each of the worker nodes.
+```
+kubectl get nodes \
+  --output=jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address} {.spec.podCIDR} {"\n"}{end}'
+``` 
+
+``` 
+[kamran@kworkhorse ~]$ kubectl get nodes \
+>   --output=jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address} {.spec.podCIDR} {"\n"}{end}'
+10.240.0.31 10.200.2.0/24 
+10.240.0.32 10.200.0.0/24 
+10.240.0.33 10.200.1.0/24 
+[kamran@kworkhorse ~]$ 
+``` 
+
+
+Next we see what does our routing table currently look like on GCE routers:
+
+```
+[kamran@kworkhorse ~]$ gcloud compute routes list --filter "network=kubernetes"
+NAME                            NETWORK     DEST_RANGE     NEXT_HOP                  PRIORITY
+default-route-34d2d73caf55cd54  kubernetes  10.240.0.0/24                            1000
+default-route-3562cd5bbcf26afd  kubernetes  0.0.0.0/0      default-internet-gateway  1000
+[kamran@kworkhorse ~]$ 
+```
+
+So we see that GCE/GCP does not know about any of the pod networks, which we saw a moment ago. So we need to udate google cloud with the routes of our pod CIDR networks. We use gcloud to manually add these routes to GCP:
+
+```
+gcloud compute routes create kubernetes-route-10-200-2-0-24 \
+  --network kubernetes \
+  --next-hop-address 10.240.0.31 \
+  --destination-range 10.200.2.0/24
+
+gcloud compute routes create kubernetes-route-10-200-0-0-24 \
+  --network kubernetes \
+  --next-hop-address 10.240.0.32 \
+  --destination-range 10.200.0.0/24
+
+gcloud compute routes create kubernetes-route-10-200-1-0-24 \
+  --network kubernetes \
+  --next-hop-address 10.240.0.33 \
+  --destination-range 10.200.1.0/24
+``` 
+
+
+Now we check our routing table again:
+
+```
+[kamran@kworkhorse ~]$ gcloud compute routes list --filter "network=kubernetes"NAME                            NETWORK     DEST_RANGE     NEXT_HOP                  PRIORITY
+default-route-34d2d73caf55cd54  kubernetes  10.240.0.0/24                            1000
+default-route-3562cd5bbcf26afd  kubernetes  0.0.0.0/0      default-internet-gateway  1000
+kubernetes-route-10-200-0-0-24  kubernetes  10.200.0.0/24  10.240.0.32               1000
+kubernetes-route-10-200-1-0-24  kubernetes  10.200.1.0/24  10.240.0.33               1000
+kubernetes-route-10-200-2-0-24  kubernetes  10.200.2.0/24  10.240.0.31               1000
+[kamran@kworkhorse ~]$ 
+```
+
+------ 
+
+We we setup DNS addon, we can do a test by deploying a nginx image with three replicas, to see what IP addresses does the pod get:
+
+
+```
+[kamran@kworkhorse ~]$ kubectl run nginx --image=nginx --port=80 --replicas=3
+deployment "nginx" created
+[kamran@kworkhorse ~]$ 
+
+[kamran@kworkhorse ~]$ kubectl get pods -o wide
+NAME                     READY     STATUS    RESTARTS   AGE       NODE
+nginx-2032906785-35cdn   1/1       Running   0          36s       worker2
+nginx-2032906785-c7n9u   1/1       Running   0          36s       worker3
+nginx-2032906785-u2gg6   1/1       Running   0          36s       worker1
+[kamran@kworkhorse ~]$ 
+
+```
+Surprisingly I do not see IP addresses of the pods in this output, whereas Kelsey's article shows pod IPs too! Anyway, lets see what IP address each pod has got:
+
+```
+[kamran@kworkhorse ~]$ kubectl exec nginx-2032906785-35cdn "ip" "addr"
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+3: eth0@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue state UP group default 
+    link/ether 0a:58:0a:c8:00:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.200.0.2/24 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f88f:94ff:feb7:3e10/64 scope link 
+       valid_lft forever preferred_lft forever
+``` 
+
+``` 
+[kamran@kworkhorse ~]$ kubectl exec nginx-2032906785-c7n9u "ip" "addr"
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+3: eth0@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue state UP group default 
+    link/ether 0a:58:0a:c8:01:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.200.1.2/24 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::74c1:e7ff:fea8:7da5/64 scope link 
+       valid_lft forever preferred_lft forever
+``` 
+
+``` 
+[kamran@kworkhorse ~]$ kubectl exec nginx-2032906785-u2gg6 "ip" "addr"
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+3: eth0@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue state UP group default 
+    link/ether 0a:58:0a:c8:02:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.200.2.2/24 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4c1b:8dff:fee0:3cbf/64 scope link 
+       valid_lft forever preferred_lft forever
+[kamran@kworkhorse ~]$ 
+
+```
+
+Todo: The node does not have these addresses defined on them, so how does a node know where to send an incoming packet for such as IP address? I see that a pod on one node can ping a pod on the other node!
+
+```
+root@nginx-2032906785-35cdn:/# ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+3: eth0@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue state UP group default 
+    link/ether 0a:58:0a:c8:00:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.200.0.2/24 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f88f:94ff:feb7:3e10/64 scope link 
+       valid_lft forever preferred_lft forever
+
+root@nginx-2032906785-35cdn:/# ping 10.200.1.2
+PING 10.200.1.2 (10.200.1.2): 56 data bytes
+64 bytes from 10.200.1.2: icmp_seq=0 ttl=62 time=1.186 ms
+^C--- 10.200.1.2 ping statistics ---
+1 packets transmitted, 1 packets received, 0% packet loss
+round-trip min/avg/max/stddev = 1.186/1.186/1.186/0.000 ms
+root@nginx-2032906785-35cdn:/# 
+``` 
+
+This is because each node has a local network for pods:
+
+```
+[kamran@kworkhorse ~]$ gcloud compute ssh worker1 "ip addr"
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: ens4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 42:01:0a:f0:00:1f brd ff:ff:ff:ff:ff:ff
+    inet 10.240.0.31/32 brd 10.240.0.31 scope global ens4
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4001:aff:fef0:1f/64 scope link 
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:a8:5b:86:9a brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 scope global docker0
+       valid_lft forever preferred_lft forever
+4: cbr0: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1460 qdisc htb state UP group default qlen 1000
+    link/ether 62:73:c7:8a:ba:cd brd ff:ff:ff:ff:ff:ff
+    inet 10.200.2.1/24 scope global cbr0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::cf4:aff:fed5:c31b/64 scope link 
+       valid_lft forever preferred_lft forever
+5: veth71e2fe9a@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP group default 
+    link/ether 62:73:c7:8a:ba:cd brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::6073:c7ff:fe8a:bacd/64 scope link 
+       valid_lft forever preferred_lft forever
+[kamran@kworkhorse ~]$ 
+``` 
+
+
+```
+[kamran@kworkhorse ~]$ gcloud compute ssh worker2 "ip addr"
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: ens4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 42:01:0a:f0:00:20 brd ff:ff:ff:ff:ff:ff
+    inet 10.240.0.32/32 brd 10.240.0.32 scope global ens4
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4001:aff:fef0:20/64 scope link 
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:34:5b:25:bc brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 scope global docker0
+       valid_lft forever preferred_lft forever
+4: cbr0: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1460 qdisc htb state UP group default qlen 1000
+    link/ether e6:1e:67:76:b5:c4 brd ff:ff:ff:ff:ff:ff
+    inet 10.200.0.1/24 scope global cbr0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4da:89ff:fe03:d11e/64 scope link 
+       valid_lft forever preferred_lft forever
+5: vethd1a195a0@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP group default 
+    link/ether e6:1e:67:76:b5:c4 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::e41e:67ff:fe76:b5c4/64 scope link 
+       valid_lft forever preferred_lft forever
+[kamran@kworkhorse ~]$ 
+```
+
+
+```
+[kamran@kworkhorse ~]$ gcloud compute ssh worker3 "ip addr"
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: ens4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 42:01:0a:f0:00:21 brd ff:ff:ff:ff:ff:ff
+    inet 10.240.0.33/32 brd 10.240.0.33 scope global ens4
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4001:aff:fef0:21/64 scope link 
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:a5:70:14:5e brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 scope global docker0
+       valid_lft forever preferred_lft forever
+4: cbr0: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1460 qdisc htb state UP group default qlen 1000
+    link/ether 9a:0c:0c:6e:48:59 brd ff:ff:ff:ff:ff:ff
+    inet 10.200.1.1/24 scope global cbr0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::c0b1:42ff:febb:73f3/64 scope link 
+       valid_lft forever preferred_lft forever
+5: vetha43e9d73@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc noqueue master cbr0 state UP group default 
+    link/ether 9a:0c:0c:6e:48:59 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::980c:cff:fe6e:4859/64 scope link 
+       valid_lft forever preferred_lft forever
+[kamran@kworkhorse ~]$ 
+```
+
+Todo: How docker creates pods on cbr0 instead of docker0 ?
+
+
+
+
+------ 
+# DNS: Deploying the Cluster DNS Add-on
+
+In this lab you will deploy the DNS add-on which is required for every Kubernetes cluster. Without the DNS add-on the following things will not work:
+
+* DNS based service discovery
+* DNS lookups from containers running in pods
+
+## Cluster DNS Add-on
+
+Create the skydns service:
+
+``` 
+kubectl create -f https://raw.githubusercontent.com/kelseyhightower/kubernetes-the-hard-way/master/skydns-svc.yaml
+``` 
+
+Verify:
+
+```
+[kamran@kworkhorse ~]$ kubectl --namespace=kube-system get svc
+NAME       CLUSTER-IP   EXTERNAL-IP   PORT(S)         AGE
+kube-dns   10.32.0.10   <none>        53/UDP,53/TCP   29s
+[kamran@kworkhorse ~]$ 
+``` 
+
+Create the skydns replication controller:
+
+```
+kubectl create -f https://raw.githubusercontent.com/kelseyhightower/kubernetes-the-hard-way/master/skydns-rc.yaml
+```
+
+
+Verify:
+``` 
+[kamran@kworkhorse ~]$ kubectl --namespace=kube-system get pods
+NAME                 READY     STATUS    RESTARTS   AGE
+kube-dns-v18-jus22   2/3       Running   0          10s
+kube-dns-v18-nxvny   2/3       Running   0          10s
+[kamran@kworkhorse ~]$ 
+```
+
+---------- 
+
+# Smoke Test
+
+This lab walks you through a quick smoke test to make sure things are working.
+
+
+```
+[kamran@kworkhorse ~]$ kubectl run nginx --image=nginx --port=80 --replicas=3
+deployment "nginx" created
+
+
+[kamran@kworkhorse ~]$ kubectl get pods -o wide
+NAME                     READY     STATUS    RESTARTS   AGE       NODE
+nginx-2032906785-00uoo   1/1       Running   0          7s        worker1
+nginx-2032906785-4drom   1/1       Running   0          7s        worker2
+nginx-2032906785-el26y   1/1       Running   0          7s        worker3
+
+
+[kamran@kworkhorse ~]$ kubectl expose deployment nginx --type NodePort
+service "nginx" exposed
+[kamran@kworkhorse ~]$ 
+```
+
+**Note:** Note that --type=LoadBalancer will not work because we did not configure a cloud provider when bootstrapping this cluster.
+
+Grab the NodePort that was setup for the nginx service:
+
+```
+[kamran@kworkhorse ~]$ export NODE_PORT=$(kubectl get svc nginx --output=jsonpath='{range .spec.ports[0]}{.nodePort}')
+
+[kamran@kworkhorse ~]$ echo $NODE_PORT 
+31751
+[kamran@kworkhorse ~]$
+```
+
+Now create a firewall rule in google cloud:
+```
+gcloud compute firewall-rules create kubernetes-nginx-service \
+  --allow=tcp:${NODE_PORT} \
+  --network kubernetes
+
+
+
+[kamran@kworkhorse ~]$ gcloud compute firewall-rules create kubernetes-nginx-service \
+>   --allow=tcp:${NODE_PORT} \
+>   --network kubernetes
+Created [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/global/firewalls/kubernetes-nginx-service].
+NAME                      NETWORK     SRC_RANGES  RULES      SRC_TAGS  TARGET_TAGS
+kubernetes-nginx-service  kubernetes  0.0.0.0/0   tcp:31751
+[kamran@kworkhorse ~]$ 
+```
+
+Grab the EXTERNAL_IP for one of the worker nodes:
+
+``` 
+export NODE_PUBLIC_IP=$(gcloud compute instances describe worker1 \
+  --format 'value(networkInterfaces[0].accessConfigs[0].natIP)')
+``` 
+
+```
+[kamran@kworkhorse ~]$ echo $NODE_PUBLIC_IP 
+130.211.73.128
+[kamran@kworkhorse ~]$
+```
+
+Test the nginx service using cURL from your local work computer:
+
+``` 
+curl http://${NODE_PUBLIC_IP}:${NODE_PORT}
+``` 
+
+And, It Works!
+
+```
+[kamran@kworkhorse ~]$ curl http://${NODE_PUBLIC_IP}:${NODE_PORT}
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+[kamran@kworkhorse ~]$ 
+```
+
+--------- 
+
+# Cleanup. Remove everything.
+
+[https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/10-cleanup.md](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/10-cleanup.md)
 
