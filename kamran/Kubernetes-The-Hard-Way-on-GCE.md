@@ -1143,6 +1143,512 @@ kamran@controller1:~$
 
 Repeat all these steps on remaining controller nodes. :)
 
+When you will be done setting up Kubernetes API related services on all three controllers, you should check the status again. 
+```
+kamran@controller3:~$ kubectl get componentstatuses
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-0               Healthy   {"health": "true"}   
+etcd-2               Healthy   {"health": "true"}   
+etcd-1               Healthy   {"health": "true"}   
+kamran@controller3:~$ 
+```
+
+Notice that no matter how many controllers you have (three in our case), the word controller-manager appears only once in the output of the above command.
+
+# Setup Kubernetes API Server Frontend Load Balancer
+Execute the commands from the local work computer:
+
+```
+[kamran@kworkhorse ~]$ gcloud compute http-health-checks create kube-apiserver-check \
+>   --description "Kubernetes API Server Health Check" \
+>   --port 8080 \
+>   --request-path /healthz
+Created [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/global/httpHealthChecks/kube-apiserver-check].
+NAME                  HOST  PORT  REQUEST_PATH
+kube-apiserver-check        8080  /healthz
+[kamran@kworkhorse ~]$ 
+```
+
+```
+[kamran@kworkhorse ~]$ gcloud compute target-pools create kubernetes-pool \
+>   --health-check kube-apiserver-check \
+>   --region europe-west1
+Created [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/regions/europe-west1/targetPools/kubernetes-pool].
+NAME             REGION        SESSION_AFFINITY  BACKUP  HEALTH_CHECKS
+kubernetes-pool  europe-west1                            kube-apiserver-check
+[kamran@kworkhorse ~]$ 
+``` 
+
+```
+gcloud compute target-pools add-instances kubernetes-pool \
+  --instances controller1,controller2,controller3
+
+
+
+[kamran@kworkhorse ~]$ gcloud compute target-pools add-instances kubernetes-pool \
+>   --instances controller1,controller2,controller3
+
+Updated [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/regions/europe-west1/targetPools/kubernetes-pool].
+[kamran@kworkhorse ~]$ 
+```
+
+
+```
+[kamran@kworkhorse ~]$ export KUBERNETES_PUBLIC_IP_ADDRESS=$(gcloud compute addresses describe kubernetes \
+>   --format 'value(address)')
+
+[kamran@kworkhorse ~]$ 
+
+
+[kamran@kworkhorse ~]$ echo $KUBERNETES_PUBLIC_IP_ADDRESS 
+130.211.80.214
+[kamran@kworkhorse ~]$ 
+```
+
+
+```
+gcloud compute forwarding-rules create kubernetes-rule \
+  --address ${KUBERNETES_PUBLIC_IP_ADDRESS} \
+  --ports 6443 \
+  --target-pool kubernetes-pool
+
+[kamran@kworkhorse ~]$ gcloud compute forwarding-rules create kubernetes-rule \
+>   --address ${KUBERNETES_PUBLIC_IP_ADDRESS} \
+>   --ports 6443 \
+>   --target-pool kubernetes-pool
+Created [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/regions/europe-west1/forwardingRules/kubernetes-rule].
+---
+IPAddress: 130.211.80.214
+IPProtocol: TCP
+creationTimestamp: '2016-07-14T02:27:41.967-07:00'
+description: ''
+id: '4566357756225447394'
+kind: compute#forwardingRule
+name: kubernetes-rule
+portRange: 6443-6443
+region: europe-west1
+selfLink: https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/regions/europe-west1/forwardingRules/kubernetes-rule
+target: europe-west1/targetPools/kubernetes-pool
+[kamran@kworkhorse ~]$ 
+```
+
+-----
+
+# Setup Kubernetes Workers
+
+Run the following commands on worker1, worker2, worker3.
+
+
+```
+sudo mkdir -p /var/lib/kubernetes
+
+sudo mv ca.pem kubernetes-key.pem kubernetes.pem /var/lib/kubernetes/
+```
+
+```
+kamran@worker1:~$ wget https://get.docker.com/builds/Linux/x86_64/docker-1.11.2.tgz
+
+2016-07-14 09:36:44 (35.3 MB/s) - ‘docker-1.11.2.tgz’ saved [20537862/20537862]
+
+kamran@worker1:~$ tar -xf docker-1.11.2.tgz
+kamran@worker1:~$ sudo cp docker/docker* /usr/bin/
+```
+
+Create Docker systemd file:
+```
+sudo sh -c 'echo "[Unit]
+Description=Docker Application Container Engine
+Documentation=http://docs.docker.io
+
+[Service]
+ExecStart=/usr/bin/docker daemon \
+  --iptables=false \
+  --ip-masq=false \
+  --host=unix:///var/run/docker.sock \
+  --log-level=error \
+  --storage-driver=overlay
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/docker.service'
+```
+
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable docker
+sudo systemctl start docker
+```
+
+Setup kubelet on each worker:
+The Kubernetes kubelet no longer relies on docker networking for pods! The Kubelet can now use CNI - the Container Network Interface to manage machine level networking requirements.
+
+Download and install CNI plugins. 
+
+```
+kamran@worker3:~$ sudo mkdir -p /opt/cni
+
+kamran@worker3:~$ wget https://storage.googleapis.com/kubernetes-release/network-plugins/cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz
+
+kamran@worker3:~$ sudo tar -xvf cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz -C /opt/cni
+bin/
+bin/flannel
+bin/ipvlan
+bin/loopback
+bin/ptp
+bin/tuning
+bin/bridge
+bin/host-local
+bin/macvlan
+bin/cnitool
+bin/dhcp
+kamran@worker3:~$
+```
+
+
+```
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubectl
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-proxy
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubelet
+```
+
+
+```
+kamran@worker1:~$ chmod +x kubectl kube-proxy kubelet
+kamran@worker1:~$ sudo mv kubectl kube-proxy kubelet /usr/bin/
+kamran@worker1:~$ sudo mkdir -p /var/lib/kubelet/
+
+```
+
+```
+sudo sh -c 'echo "apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority: /var/lib/kubernetes/ca.pem
+    server: https://10.240.0.21:6443
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubelet
+  name: kubelet
+current-context: kubelet
+users:
+- name: kubelet
+  user:
+    token: chAng3m3" > /var/lib/kubelet/kubeconfig'
+```
+
+**Note:** Maybe we should use the controller's load balancer/cluster IP instead of using controller1's IP ? [Todo]
+
+Create the kubelet systemd unit file:
+```
+sudo sh -c 'echo "[Unit]
+Description=Kubernetes Kubelet
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/usr/bin/kubelet \
+  --allow-privileged=true \
+  --api-servers=https://10.240.0.21:6443,https://10.240.0.22:6443,https://10.240.0.23:6443 \
+  --cloud-provider= \
+  --cluster-dns=10.32.0.10 \
+  --cluster-domain=cluster.local \
+  --configure-cbr0=true \
+  --container-runtime=docker \
+  --docker=unix:///var/run/docker.sock \
+  --network-plugin=kubenet \
+  --kubeconfig=/var/lib/kubelet/kubeconfig \
+  --reconcile-cidr=true \
+  --serialize-image-pulls=false \
+  --tls-cert-file=/var/lib/kubernetes/kubernetes.pem \
+  --tls-private-key-file=/var/lib/kubernetes/kubernetes-key.pem \
+  --v=2
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/kubelet.service'
+```
+
+```
+kamran@worker1:~$ sudo systemctl daemon-reload
+kamran@worker1:~$ sudo systemctl enable kubelet
+Created symlink from /etc/systemd/system/multi-user.target.wants/kubelet.service to /etc/systemd/system/kubelet.service.
+kamran@worker1:~$ sudo systemctl start kubelet
+
+
+kamran@worker1:~$ sudo systemctl status kubelet --no-pager
+● kubelet.service - Kubernetes Kubelet
+   Loaded: loaded (/etc/systemd/system/kubelet.service; enabled; vendor preset: enabled)
+   Active: active (running) since Thu 2016-07-14 09:46:28 UTC; 5s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 6709 (kubelet)
+    Tasks: 10
+   Memory: 16.4M
+      CPU: 243ms
+   CGroup: /system.slice/kubelet.service
+           ├─6709 /usr/bin/kubelet --allow-privileged=true --api-servers=https://10.240.0.21:6443,https://10.240.0.22:6443,https://10.240.0.2...
+           └─6738 journalctl -k -f
+
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.355931    6709 volume_manager.go:216] Starting Kubelet Volume Manager
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.360590    6709 factory.go:228] Registering Docker factory
+Jul 14 09:46:28 worker1 kubelet[6709]: E0714 09:46:28.360933    6709 manager.go:240] Registration of the rkt container factory failed... refused
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.361134    6709 factory.go:54] Registering systemd factory
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.362014    6709 factory.go:86] Registering Raw factory
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.362740    6709 manager.go:1072] Started watching for new ooms in manager
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.363567    6709 oomparser.go:185] oomparser using systemd
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.364246    6709 manager.go:281] Starting recovery of all containers
+Jul 14 09:46:28 worker1 kubelet[6709]: I0714 09:46:28.454304    6709 manager.go:286] Recovery completed
+Jul 14 09:46:33 worker1 kubelet[6709]: I0714 09:46:33.349758    6709 kubelet.go:2477] skipping pod synchronization - [Kubenet does no...PodCIDR]
+Hint: Some lines were ellipsized, use -l to show in full.
+kamran@worker1:~$ 
+```
+
+kube-proxy:
+```
+sudo sh -c 'echo "[Unit]
+Description=Kubernetes Kube Proxy
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+[Service]
+ExecStart=/usr/bin/kube-proxy \
+  --master=https://10.240.0.21:6443 \
+  --kubeconfig=/var/lib/kubelet/kubeconfig \
+  --proxy-mode=iptables \
+  --v=2
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/kube-proxy.service'
+```
+
+**note:** again we have IP of one of the controllers instead of IP of controllers' pool ? [todo]
+
+```
+kamran@worker1:~$ sudo systemctl daemon-reload
+kamran@worker1:~$ sudo systemctl enable kube-proxy
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-proxy.service to /etc/systemd/system/kube-proxy.service.
+kamran@worker1:~$ sudo systemctl start kube-proxy
+kamran@worker1:~$ sudo systemctl status kube-proxy --no-pager
+● kube-proxy.service - Kubernetes Kube Proxy
+   Loaded: loaded (/etc/systemd/system/kube-proxy.service; enabled; vendor preset: enabled)
+   Active: activating (auto-restart) (Result: exit-code) since Thu 2016-07-14 09:49:48 UTC; 173ms ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+  Process: 6906 ExecStart=/usr/bin/kube-proxy --master=https://10.240.0.21:6443 --kubeconfig=/var/lib/kubelet/kubeconfig --proxy-mode=iptables --v=2 (code=exited, status=1/FAILURE)
+ Main PID: 6906 (code=exited, status=1/FAILURE)
+
+Jul 14 09:49:48 worker1 systemd[1]: kube-proxy.service: Main process exited, code=exited, status=1/FAILURE
+Jul 14 09:49:48 worker1 systemd[1]: kube-proxy.service: Unit entered failed state.
+Jul 14 09:49:48 worker1 systemd[1]: kube-proxy.service: Failed with result 'exit-code'.
+kamran@worker1:~$ 
+```
+
+Failure! Why? (todo)
+
+
+```
+kamran@worker1:~$ journalctl -f
+-- Logs begin at Wed 2016-07-13 10:58:49 UTC. --
+Jul 14 09:51:22 worker1 systemd[1]: kube-proxy.service: Service hold-off time over, scheduling restart.
+Jul 14 09:51:22 worker1 systemd[1]: Stopped Kubernetes Kube Proxy.
+Jul 14 09:51:22 worker1 systemd[1]: Started Kubernetes Kube Proxy.
+Jul 14 09:51:22 worker1 kube-proxy[7069]: I0714 09:51:22.463433    7069 server.go:154] setting OOM scores is unsupported in this build
+Jul 14 09:51:22 worker1 kube-proxy[7069]: stat /var/lib/kubelet/kubeconfig: no such file or directory
+Jul 14 09:51:22 worker1 systemd[1]: kube-proxy.service: Main process exited, code=exited, status=1/FAILURE
+Jul 14 09:51:22 worker1 systemd[1]: kube-proxy.service: Unit entered failed state.
+Jul 14 09:51:22 worker1 systemd[1]: kube-proxy.service: Failed with result 'exit-code'.
+Jul 14 09:51:23 worker1 kubelet[6709]: I0714 09:51:23.410552    6709 kubelet.go:2477] skipping pod synchronization - [Kubenet does not have netConfig. This is most likely due to lack of PodCIDR]
+Jul 14 09:51:24 worker1 sudo[7059]: pam_unix(sudo:session): session closed for user root
+Jul 14 09:51:27 worker1 systemd[1]: kube-proxy.service: Service hold-off time over, scheduling restart.
+Jul 14 09:51:27 worker1 systemd[1]: Stopped Kubernetes Kube Proxy.
+Jul 14 09:51:27 worker1 systemd[1]: Started Kubernetes Kube Proxy.
+Jul 14 09:51:27 worker1 kube-proxy[7077]: I0714 09:51:27.714602    7077 server.go:154] setting OOM scores is unsupported in this build
+Jul 14 09:51:27 worker1 kube-proxy[7077]: stat /var/lib/kubelet/kubeconfig: no such file or directory
+Jul 14 09:51:27 worker1 systemd[1]: kube-proxy.service: Main process exited, code=exited, status=1/FAILURE
+Jul 14 09:51:27 worker1 systemd[1]: kube-proxy.service: Unit entered failed state.
+Jul 14 09:51:27 worker1 systemd[1]: kube-proxy.service: Failed with result 'exit-code'.
+Jul 14 09:51:28 worker1 kubelet[6709]: I0714 09:51:28.356308    6709 container_manager_linux.go:284] Discovered runtime cgroups name: /system.slice/docker.service
+Jul 14 09:51:28 worker1 kubelet[6709]: I0714 09:51:28.411613    6709 kubelet.go:2477] skipping pod synchronization - [Kubenet does not have netConfig. This is most likely due to lack of PodCIDR]
+^C
+kamran@worker1:~$ 
+``` 
+
+OK, so I missed  a step to execute on worker node, which creates /var/lib/kubelet/kubeconfig. Recreated it and restarted service kube-proxy. All became OK.
+
+```
+kamran@worker1:~$ sudo systemctl status kube-proxy --no-pager
+● kube-proxy.service - Kubernetes Kube Proxy
+   Loaded: loaded (/etc/systemd/system/kube-proxy.service; enabled; vendor preset: enabled)
+   Active: active (running) since Thu 2016-07-14 09:53:27 UTC; 1min 10s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 7397 (kube-proxy)
+    Tasks: 6
+   Memory: 5.4M
+      CPU: 904ms
+   CGroup: /system.slice/kube-proxy.service
+           └─7397 /usr/bin/kube-proxy --master=https://10.240.0.21:6443 --kubeconfig=/var/lib/kubelet/kubeconfig --proxy-mode=iptables --v=2
+
+Jul 14 09:53:27 worker1 systemd[1]: Started Kubernetes Kube Proxy.
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.577730    7397 server.go:154] setting OOM scores is unsupported in this build
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.584129    7397 server.go:201] Using iptables Proxier.
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.584600    7397 server.go:214] Tearing down userspace rules.
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.593516    7397 conntrack.go:36] Setting nf_conntrack_max to 262144
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.594381    7397 conntrack.go:41] Setting conntrack hashsize to 65536
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.594919    7397 conntrack.go:46] Setting nf_conntrack_tcp_timeout_established to 86400
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.635690    7397 proxier.go:502] Setting endpoints for "default/kubernetes:htt...23:6443]
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.636219    7397 proxier.go:647] Not syncing iptables until Services and Endpo...m master
+Jul 14 09:53:27 worker1 kube-proxy[7397]: I0714 09:53:27.637706    7397 proxier.go:427] Adding new service "default/kubernetes:https"...:443/TCP
+Hint: Some lines were ellipsized, use -l to show in full.
+kamran@worker1:~$ 
+```
+
+```
+kamran@worker1:~$ sudo docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+
+kamran@worker1:~$ ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: ens4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1460 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 42:01:0a:f0:00:1f brd ff:ff:ff:ff:ff:ff
+    inet 10.240.0.31/32 brd 10.240.0.31 scope global ens4
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4001:aff:fef0:1f/64 scope link 
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:89:5b:bc:ea brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 scope global docker0
+       valid_lft forever preferred_lft forever
+kamran@worker1:~$ 
+```
+
+
+------
+
+
+# Configuring the Kubernetes Client - Remote Access
+
+## Linux
+```
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubectl
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin
+```
+
+
+Configure the kubectl client to point to the Kubernetes API Server Frontend Load Balancer.
+```
+[kamran@kworkhorse ~]$ export KUBERNETES_PUBLIC_IP_ADDRESS=$(gcloud compute addresses describe kubernetes \
+>   --format 'value(address)')
+
+[kamran@kworkhorse ~]$ echo $KUBERNETES_PUBLIC_IP_ADDRESS 
+130.211.80.214
+[kamran@kworkhorse ~]$ 
+```
+
+Recall the token we setup for the admin user:
+```
+# /var/run/kubernetes/token.csv on the controller nodes
+chAng3m3,admin,admin
+```
+Also be sure to locate the CA certificate created earlier. Since we are using self-signed TLS certs we need to trust the CA certificate so we can verify the remote API Servers.
+
+## Build up the kubeconfig entry
+
+The following commands will build up the default kubeconfig file used by kubectl.
+
+```
+kubectl config set-cluster kubernetes-the-hard-way \
+  --certificate-authority=ca.pem \
+  --embed-certs=true \
+  --server=https://${KUBERNETES_PUBLIC_IP_ADDRESS}:6443
+
+
+kubectl config set-credentials admin --token chAng3m3
+
+
+kubectl config set-context default-context \
+  --cluster=kubernetes-the-hard-way \
+  --user=admin
+
+
+kubectl config use-context default-context
+```
+
+Here is the same commands with their outputs:
+
+```
+[kamran@kworkhorse ~]$ kubectl config set-cluster kubernetes-the-hard-way \
+>   --certificate-authority=ca.pem \
+>   --embed-certs=true \
+>   --server=https://${KUBERNETES_PUBLIC_IP_ADDRESS}:6443
+cluster "kubernetes-the-hard-way" set.
+
+
+[kamran@kworkhorse ~]$ kubectl config set-credentials admin --token chAng3m3
+user "admin" set.
+
+
+[kamran@kworkhorse ~]$ kubectl config set-context default-context \
+>   --cluster=kubernetes-the-hard-way \
+>   --user=admin
+context "default-context" set.
+
+
+[kamran@kworkhorse ~]$ kubectl config use-context default-context
+switched to context "default-context".
+[kamran@kworkhorse ~]$ 
+```
+
+
+
+At this point you should be able to connect securly to the remote API server:
+
+```
+[kamran@kworkhorse ~]$ kubectl get componentstatuses
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-0               Healthy   {"health": "true"}   
+etcd-1               Healthy   {"health": "true"}   
+etcd-2               Healthy   {"health": "true"}   
+[kamran@kworkhorse ~]$ 
+```
+
+```
+[kamran@kworkhorse ~]$ kubectl get nodes
+NAME      STATUS    AGE
+worker2   Ready     7m
+worker3   Ready     7m
+[kamran@kworkhorse ~]$ 
+```
+
+Where is worker1? (todo)
+
+Rebooted worker1 and got it up:
+
+```
+[kamran@kworkhorse ~]$ kubectl get nodes
+NAME      STATUS    AGE
+worker1   Ready     1m
+worker2   Ready     9m
+worker3   Ready     9m
+[kamran@kworkhorse ~]$ 
+```
 
 
 
