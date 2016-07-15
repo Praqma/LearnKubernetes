@@ -1986,8 +1986,27 @@ service "nginx" exposed
 ```
 
 **Note:** Note that --type=LoadBalancer will not work because we did not configure a cloud provider when bootstrapping this cluster.
+Example of this note:
+```
+[kamran@kworkhorse ~]$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+centos-multitool   1         1         1            1           7h
+nginx              3         3         3            3           1d
 
-Grab the NodePort that was setup for the nginx service:
+[kamran@kworkhorse ~]$ kubectl expose deployment centos-multitool --port 80 --type=LoadBalancer
+service "centos-multitool" exposed
+
+[kamran@kworkhorse ~]$ kubectl get services
+NAME               CLUSTER-IP    EXTERNAL-IP   PORT(S)   AGE
+centos-multitool   10.32.0.119                 80/TCP    6s
+kubernetes         10.32.0.1     <none>        443/TCP   2d
+nginx              10.32.0.252   nodes         80/TCP    1d
+[kamran@kworkhorse ~]$ 
+```
+
+
+
+Now back to nginx service. Grab the NodePort that was setup for the nginx service:
 
 ```
 [kamran@kworkhorse ~]$ export NODE_PORT=$(kubectl get svc nginx --output=jsonpath='{range .spec.ports[0]}{.nodePort}')
