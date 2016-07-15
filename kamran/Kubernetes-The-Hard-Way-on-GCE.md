@@ -2336,6 +2336,38 @@ kubernetes.default.svc.cluster.local. 21 IN A	10.32.0.1
 [root@centos-multitool-3822887632-pwlr1 /]# 
 ```
 
+
+```
+[kamran@kworkhorse ~]$ kubectl get services
+NAME         CLUSTER-IP    EXTERNAL-IP   PORT(S)   AGE
+kubernetes   10.32.0.1     <none>        443/TCP   2d
+nginx        10.32.0.252   nodes         80/TCP    1d
+
+[kamran@kworkhorse ~]$ kubectl exec nginx-2032906785-00uoo -i -t -- "bash"
+
+root@nginx-2032906785-00uoo:/# dig nginx.default.svc.cluster.local     
+
+; <<>> DiG 9.9.5-9+deb8u6-Debian <<>> nginx.default.svc.cluster.local
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 21863
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;nginx.default.svc.cluster.local. IN	A
+
+;; ANSWER SECTION:
+nginx.default.svc.cluster.local. 30 IN	A	10.32.0.252
+
+;; Query time: 4 msec
+;; SERVER: 10.32.0.10#53(10.32.0.10)
+;; WHEN: Fri Jul 15 16:42:52 UTC 2016
+;; MSG SIZE  rcvd: 65
+
+root@nginx-2032906785-00uoo:/# 
+```
+
+
 It works! Hurray!
 
 
