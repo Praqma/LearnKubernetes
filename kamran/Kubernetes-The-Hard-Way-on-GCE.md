@@ -2397,3 +2397,37 @@ It works! Hurray!
 
 [https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/10-cleanup.md](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/10-cleanup.md)
 
+```
+gcloud compute instances delete \
+  controller1 controller2 controller3 \
+  worker1 worker2 worker3 \
+  etcd1 etcd2 etcd3
+
+gcloud compute forwarding-rules delete kubernetes-rule
+
+gcloud compute target-pools delete kubernetes-pool
+
+gcloud compute http-health-checks delete kube-apiserver-check
+
+gcloud compute addresses delete kubernetes
+
+gcloud compute firewall-rules delete \
+  kubernetes-allow-api-server \
+  kubernetes-allow-healthz \
+  kubernetes-allow-icmp \
+  kubernetes-allow-internal \
+  kubernetes-allow-rdp \
+  kubernetes-nginx-service \
+  kubernetes-allow-ssh \
+  kubernetes-allow-dns
+
+gcloud compute routes delete \
+  kubernetes-route-10-200-0-0-24 \
+  kubernetes-route-10-200-1-0-24 \
+  kubernetes-route-10-200-2-0-24
+
+gcloud compute networks subnets delete kubernetes
+
+gcloud compute networks delete kubernetes
+```
+
