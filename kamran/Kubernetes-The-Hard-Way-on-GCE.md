@@ -1343,7 +1343,9 @@ users:
     token: chAng3m3" > /var/lib/kubelet/kubeconfig'
 ```
 
-**Note:** Maybe we should use the controller's load balancer/cluster IP instead of using controller1's IP ? [Todo]
+**Note:** Maybe we should use the controller's load balancer/cluster IP instead of using controller1's IP ?
+**Answer**: [https://github.com/kelseyhightower/kubernetes-the-hard-way/issues/27](https://github.com/kelseyhightower/kubernetes-the-hard-way/issues/27)
+
 
 Create the kubelet systemd unit file:
 ```
@@ -1377,6 +1379,10 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target" > /etc/systemd/system/kubelet.service'
 ```
+
+Notice the presence of `--configure-cbr0=true` and `--network-plugin=kubenet` and `--reconcile-cidr=true` . These help a worker node setup a container/pod network. How they pick up a specific address scheme such as **10.200.1.0/24** is something I need to look into. (todo)
+
+
 
 ```
 kamran@worker1:~$ sudo systemctl daemon-reload
@@ -2058,6 +2064,281 @@ Commercial support is available at
 </html>
 [kamran@kworkhorse ~]$ 
 ```
+
+## Check DNS resolution on pods:
+
+The default nginx image does not have any dns client tools in it. 
+
+```
+[kamran@kworkhorse ~]$ kubectl exec nginx-2032906785-00uoo -i -t -- "bash"
+
+root@nginx-2032906785-00uoo:/# nslookup kubernetes
+bash: nslookup: command not found
+root@nginx-2032906785-00uoo:/# 
+```
+
+I tried to install nslookup or dig, but apt-get update fails. Apparently it was not able to resolve any names:
+
+```
+root@nginx-2032906785-00uoo:/# apt-get update
+Err http://httpredir.debian.org jessie InRelease                               
+  
+Err http://httpredir.debian.org jessie-updates InRelease                       
+  
+Err http://security.debian.org jessie/updates InRelease                        
+  
+Err http://nginx.org jessie InRelease                                          
+  
+Err http://httpredir.debian.org jessie Release.gpg                             
+  Could not resolve 'httpredir.debian.org'
+Err http://security.debian.org jessie/updates Release.gpg
+  Could not resolve 'security.debian.org'
+Err http://nginx.org jessie Release.gpg
+  Could not resolve 'nginx.org'
+Err http://httpredir.debian.org jessie-updates Release.gpg
+  Could not resolve 'httpredir.debian.org'
+Reading package lists... Done
+W: Failed to fetch http://httpredir.debian.org/debian/dists/jessie/InRelease  
+
+W: Failed to fetch http://httpredir.debian.org/debian/dists/jessie-updates/InRelease  
+
+W: Failed to fetch http://security.debian.org/dists/jessie/updates/InRelease  
+
+W: Failed to fetch http://nginx.org/packages/mainline/debian/dists/jessie/InRelease  
+
+W: Failed to fetch http://httpredir.debian.org/debian/dists/jessie/Release.gpg  Could not resolve 'httpredir.debian.org'
+
+W: Failed to fetch http://httpredir.debian.org/debian/dists/jessie-updates/Release.gpg  Could not resolve 'httpredir.debian.org'
+
+W: Failed to fetch http://security.debian.org/dists/jessie/updates/Release.gpg  Could not resolve 'security.debian.org'
+
+W: Failed to fetch http://nginx.org/packages/mainline/debian/dists/jessie/Release.gpg  Could not resolve 'nginx.org'
+
+W: Some index files failed to download. They have been ignored, or old ones used instead.
+root@nginx-2032906785-00uoo:/# 
+
+``` 
+
+Though the resolv.conf file on the nginx pod has the DNS entry and looks like this:
+```
+root@nginx-2032906785-00uoo:/# cat /etc/resolv.conf 
+search default.svc.cluster.local svc.cluster.local cluster.local c.learn-kubernetes-1289.internal google.internal
+nameserver 10.32.0.10
+options ndots:5
+root@nginx-2032906785-00uoo:/# 
+```
+
+
+I have a custom image I use for such troubleshooting. I used that and found out that DNS server is not reachable.
+
+```
+[kamran@kworkhorse ~]$ kubectl run centos-multitool --image=kamranazeem/centos-multitool --replicas=1
+deployment "centos-multitool" created
+
+[kamran@kworkhorse ~]$ kubectl get pods
+NAME                                READY     STATUS    RESTARTS   AGE
+centos-multitool-3822887632-pwlr1   1/1       Running   0          11s
+nginx-2032906785-00uoo              1/1       Running   0          20h
+nginx-2032906785-4drom              1/1       Running   0          20h
+nginx-2032906785-el26y              1/1       Running   0          20h
+
+
+[kamran@kworkhorse ~]$ kubectl exec centos-multitool-3822887632-pwlr1  -i -t -- "bash"
+
+[root@centos-multitool-3822887632-pwlr1 /]# dig yahoo.com
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-29.el7_2.3 <<>> yahoo.com
+;; global options: +cmd
+;; connection timed out; no servers could be reached
+
+[root@centos-multitool-3822887632-pwlr1 /]# cat /etc/resolv.conf 
+search default.svc.cluster.local svc.cluster.local cluster.local c.learn-kubernetes-1289.internal google.internal
+nameserver 10.32.0.10
+options ndots:5
+
+[root@centos-multitool-3822887632-pwlr1 /]# dig yahoo.com @10.32.0.10
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-29.el7_2.3 <<>> yahoo.com @10.32.0.10
+;; global options: +cmd
+;; connection timed out; no servers could be reached
+[root@centos-multitool-3822887632-pwlr1 /]# 
+```
+
+I checked the name resolution from a worker, using cluster DNS, and it works:
+
+```
+kamran@worker3:~$ dig yahoo.com @10.32.0.10
+
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> yahoo.com @10.32.0.10
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 53713
+;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 512
+;; QUESTION SECTION:
+;yahoo.com.			IN	A
+
+;; ANSWER SECTION:
+yahoo.com.		1799	IN	A	98.139.183.24
+yahoo.com.		1799	IN	A	98.138.253.109
+yahoo.com.		1799	IN	A	206.190.36.45
+
+;; Query time: 37 msec
+;; SERVER: 10.32.0.10#53(10.32.0.10)
+;; WHEN: Fri Jul 15 10:13:46 UTC 2016
+;; MSG SIZE  rcvd: 86
+
+kamran@worker3:~$ 
+```
+
+You may want to check this issue: [https://github.com/kelseyhightower/kubernetes-the-hard-way/issues/33](https://github.com/kelseyhightower/kubernetes-the-hard-way/issues/33)
+
+So, maybe it is a firewall thing, which is not letting the pods access the DNS service? I created a (very open) firewall rule to allow DNS traffic:
+
+```
+[kamran@kworkhorse ~]$ gcloud compute firewall-rules create kubernetes-allow-dns \
+>   --allow tcp:53,udp:53 \
+>   --network kubernetes \
+>   --source-ranges 0.0.0.0/0
+Created [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/global/firewalls/kubernetes-allow-dns].
+NAME                  NETWORK     SRC_RANGES  RULES          SRC_TAGS  TARGET_TAGS
+kubernetes-allow-dns  kubernetes  0.0.0.0/0   tcp:53,udp:53
+[kamran@kworkhorse ~]$ 
+```  
+
+And now it works! 
+
+```
+[kamran@kworkhorse ~]$ kubectl exec centos-multitool-3822887632-pwlr1  -i -t -- "bash"
+[root@centos-multitool-3822887632-pwlr1 /]# dig yahoo.com
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-29.el7_2.3 <<>> yahoo.com
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 5006
+;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;yahoo.com.			IN	A
+
+;; ANSWER SECTION:
+yahoo.com.		1249	IN	A	206.190.36.45
+yahoo.com.		1249	IN	A	98.138.253.109
+yahoo.com.		1249	IN	A	98.139.183.24
+
+;; Query time: 3 msec
+;; SERVER: 10.32.0.10#53(10.32.0.10)
+;; WHEN: Fri Jul 15 10:22:56 UTC 2016
+;; MSG SIZE  rcvd: 86
+
+[root@centos-multitool-3822887632-pwlr1 /]# 
+```
+
+```
+[root@centos-multitool-3822887632-pwlr1 /]# dig kubernetes.default.svc.cluster.local                   
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-29.el7_2.3 <<>> kubernetes.default.svc.cluster.local
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 61700
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;kubernetes.default.svc.cluster.local. IN A
+
+;; ANSWER SECTION:
+kubernetes.default.svc.cluster.local. 13 IN A	10.32.0.1
+
+;; Query time: 2 msec
+;; SERVER: 10.32.0.10#53(10.32.0.10)
+;; WHEN: Fri Jul 15 10:23:48 UTC 2016
+;; MSG SIZE  rcvd: 81
+
+[root@centos-multitool-3822887632-pwlr1 /]# 
+```
+
+
+Furthermore, I tried to secure it a bit, by recreating this firewall rule only for the pod networks:
+```
+[kamran@kworkhorse ~]$ gcloud compute firewall-rules delete kubernetes-allow-dns   
+The following firewalls will be deleted:
+ - [kubernetes-allow-dns]
+
+Do you want to continue (Y/n)?  y
+
+Deleted [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/global/firewalls/kubernetes-allow-dns].
+
+[kamran@kworkhorse ~]$
+```
+
+```
+[kamran@kworkhorse ~]$ gcloud compute firewall-rules create kubernetes-allow-dns   --allow tcp:53,udp:53   --network kubernetes   --source-ranges 10.200.0.0/16
+Created [https://www.googleapis.com/compute/v1/projects/learn-kubernetes-1289/global/firewalls/kubernetes-allow-dns].
+NAME                  NETWORK     SRC_RANGES     RULES          SRC_TAGS  TARGET_TAGS
+kubernetes-allow-dns  kubernetes  10.200.0.0/16  tcp:53,udp:53
+[kamran@kworkhorse ~]$ 
+```
+
+Lets see if the DNS still works from a pod!
+
+```
+[kamran@kworkhorse ~]$ kubectl exec centos-multitool-3822887632-pwlr1  -i -t -- "bash"
+[root@centos-multitool-3822887632-pwlr1 /]# dig yahoo.com 
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-29.el7_2.3 <<>> yahoo.com
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 43623
+;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;yahoo.com.			IN	A
+
+;; ANSWER SECTION:
+yahoo.com.		968	IN	A	98.139.183.24
+yahoo.com.		968	IN	A	206.190.36.45
+yahoo.com.		968	IN	A	98.138.253.109
+
+;; Query time: 4 msec
+;; SERVER: 10.32.0.10#53(10.32.0.10)
+;; WHEN: Fri Jul 15 10:27:37 UTC 2016
+;; MSG SIZE  rcvd: 86
+
+[root@centos-multitool-3822887632-pwlr1 /]# dig kubernetes.default.svc.cluster.local      
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-29.el7_2.3 <<>> kubernetes.default.svc.cluster.local
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52286
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;kubernetes.default.svc.cluster.local. IN A
+
+;; ANSWER SECTION:
+kubernetes.default.svc.cluster.local. 21 IN A	10.32.0.1
+
+;; Query time: 2 msec
+;; SERVER: 10.32.0.10#53(10.32.0.10)
+;; WHEN: Fri Jul 15 10:27:40 UTC 2016
+;; MSG SIZE  rcvd: 81
+
+[root@centos-multitool-3822887632-pwlr1 /]# 
+```
+
+It works! Hurray!
+
+
 
 --------- 
 
