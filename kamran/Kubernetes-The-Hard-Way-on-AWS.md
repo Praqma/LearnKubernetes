@@ -7,6 +7,8 @@ The idea is to also include a LoadBalancer which we (Praqma) built especially fo
 
 This setup will also introduce High Availability for etcd and master/controller nodes.
 
+I am not using AWS command line utility. Everything I do here is by using AWS web interface. Though, using AWS CLI is much faster.
+
 # Network setup
 
 I have created a new VPC on AWS with a base network address of 10.0.0.0/16 .
@@ -35,7 +37,330 @@ The /etc/hosts file I will use is:
 10.0.0.182	worker2
 ```
 
+On AWS, I have allowed all traffic within this VPC from 10.0.0.0/16. Also all traffic is allowed from my IP.
+
+# Reserve a public IP address for Kubernetes control plane, to be used from the outside world to connect to Kubernetes
+
+Here you create a public IP address which will be used as a frontend for kubernetes control plane. We need to do this before the generation of SSL certificates, because we are going to use that IP address in the certificates.
+
+Create a new Elastic IP. You do not need to assign this IP to any instance at the moment.
+IP = 52.59.74.90
 
 
 
+
+
+# Setup Certificate Authority and Generate TLS certificates
+On local work computer. 
+
+We will use CFSSL (why? Todo)
+
+## Install CFSSL
+
+On work computer.
+
+```
+wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+chmod +x cfssl_linux-amd64
+sudo mv cfssl_linux-amd64 /usr/local/bin/cfssl
+
+
+wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+chmod +x cfssljson_linux-amd64
+sudo mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
+```
+
+```
+echo '{
+  "signing": {
+    "default": {
+      "expiry": "8760h"
+    },
+    "profiles": {
+      "kubernetes": {
+        "usages": ["signing", "key encipherment", "server auth", "client auth"],
+        "expiry": "8760h"
+      }
+    }
+  }
+}' > ca-config.json
+```
+
+```
+echo '{
+  "CN": "Kubernetes",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "NO",
+      "L": "Oslo",
+      "O": "Kubernetes",
+      "OU": "CA",
+      "ST": "Oslo"
+    }
+  ]
+}' > ca-csr.json
+```
+
+```
+cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+
+
+[kamran@kworkhorse ~]$ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+2016/07/13 13:17:32 [INFO] generating a new CA key and certificate from CSR
+2016/07/13 13:17:32 [INFO] generate received request
+2016/07/13 13:17:32 [INFO] received CSR
+2016/07/13 13:17:32 [INFO] generating key: rsa-2048
+2016/07/13 13:17:32 [INFO] encoded CSR
+2016/07/13 13:17:32 [INFO] signed certificate with serial number 58822608155516168535438893668485299792393775635
+[kamran@kworkhorse ~]$ 
+```
+
+Resulting files:
+```
+[kamran@kworkhorse ~]$ ls -ltrh
+-rw-rw-r--  1 kamran kamran  232 Jul 13 13:15 ca-config.json
+-rw-rw-r--  1 kamran kamran  205 Jul 13 13:17 ca-csr.json
+-rw-rw-r--  1 kamran kamran 1.4K Jul 13 13:17 ca.pem
+-rw-------  1 kamran kamran 1.7K Jul 13 13:17 ca-key.pem
+-rw-r--r--  1 kamran kamran  997 Jul 13 13:17 ca.csr
+[kamran@kworkhorse ~]$ 
+```
+
+Validate:
+```
+[kamran@kworkhorse ~]$ openssl x509 -in ca.pem -text -noout
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            0a:4d:b2:6c:f7:f6:8a:c4:7c:d4:8e:86:d3:93:60:05:b2:43:aa:13
+    Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=NO, ST=Oslo, L=Oslo, O=Kubernetes, OU=CA, CN=Kubernetes
+        Validity
+            Not Before: Jul 13 11:13:00 2016 GMT
+            Not After : Jul 12 11:13:00 2021 GMT
+        Subject: C=NO, ST=Oslo, L=Oslo, O=Kubernetes, OU=CA, CN=Kubernetes
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:c6:5e:6e:c7:2f:4b:d7:15:a8:80:a5:98:73:05:
+                    1b:fe:f2:0a:f5:04:6d:fd:1f:ac:b1:61:13:9a:1e:
+                    ff:27:26:6e:3a:d1:07:a7:db:c6:4e:78:7f:0c:13:
+                    21:a2:22:43:b2:23:48:ce:5b:56:60:d7:04:b6:ff:
+                    fa:e5:a7:d3:65:c9:7f:c2:65:f3:96:75:56:c0:02:
+                    17:84:50:8e:7a:ac:e3:4c:ce:1c:d1:da:e5:7c:4d:
+                    a8:16:39:ca:5f:2f:8f:45:cb:b3:1b:71:4d:a6:27:
+                    a7:bd:6b:0a:52:dd:7f:dc:7a:62:56:38:48:0a:e4:
+                    26:32:38:a7:70:1f:08:25:d4:b3:00:82:88:f0:4d:
+                    c5:40:67:df:4d:a9:5a:be:38:4a:3f:6c:a1:7c:18:
+                    d6:43:a6:ae:3d:f1:df:85:e2:d9:08:97:93:ed:2c:
+                    37:7a:53:13:ef:34:83:6f:0f:7c:99:2c:b2:b7:dc:
+                    6e:04:38:d1:6a:43:b0:0f:74:c7:e0:bf:30:78:d9:
+                    58:36:b6:44:5a:22:0f:34:60:4d:ce:d5:86:02:de:
+                    0a:94:65:3d:61:d6:82:3b:c4:fb:1b:4b:05:21:1c:
+                    4a:0f:e7:e7:20:f6:e6:27:8f:f3:84:66:86:df:e2:
+                    c9:f3:8e:96:25:7b:23:b1:13:c9:c2:e1:03:06:17:
+                    17:15
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Key Usage: critical
+                Certificate Sign, CRL Sign
+            X509v3 Basic Constraints: critical
+                CA:TRUE, pathlen:2
+            X509v3 Subject Key Identifier: 
+                43:B4:D8:70:0A:43:2B:61:A7:22:ED:54:69:15:D2:04:46:93:3E:E5
+            X509v3 Authority Key Identifier: 
+                keyid:43:B4:D8:70:0A:43:2B:61:A7:22:ED:54:69:15:D2:04:46:93:3E:E5
+
+    Signature Algorithm: sha256WithRSAEncryption
+         4c:97:9c:94:d3:04:81:f4:88:d4:38:64:d9:0e:2a:b9:27:a4:
+         10:48:b9:14:34:6c:50:27:b8:ec:6d:0f:cd:11:dd:8b:3c:1f:
+         95:79:49:89:b1:ea:90:6c:66:52:18:8e:ff:34:d8:f5:be:04:
+         ae:df:db:f8:ca:c9:4f:58:8e:28:20:93:22:2a:db:bc:72:3c:
+         2a:52:10:85:8f:f7:e4:77:fa:94:d2:d5:fb:33:83:0f:3d:a3:
+         d6:0b:68:5f:35:06:c9:ff:10:d4:cb:c8:31:3e:37:a8:45:46:
+         07:fd:75:de:59:aa:47:a8:fd:42:22:57:93:ab:aa:12:8b:1c:
+         b0:4b:19:15:58:f4:97:43:70:fc:ce:d6:a8:16:28:fe:51:db:
+         b2:76:d5:2c:ec:01:94:f3:2d:67:8f:55:dc:be:f3:ef:a9:5b:
+         c8:2d:74:2e:7a:1b:67:9d:63:39:39:0d:14:d8:77:59:26:fc:
+         02:c7:cd:52:22:25:83:74:4e:98:1f:0d:32:32:64:ed:5a:07:
+         1a:e7:dc:0e:85:48:aa:bf:b8:9b:41:17:0d:a9:a9:98:34:8c:
+         1c:25:f7:4c:dd:ca:1b:36:86:7f:90:53:25:5a:6c:d8:2e:5c:
+         3d:a4:be:e8:d2:a3:d0:2c:9b:ca:7c:0a:1f:43:48:1d:9e:7a:
+         9b:64:31:6f
+[kamran@kworkhorse ~]$ 
+```
+
+
+## Generate the single Kubernetes TLS Cert
+
+```
+export KUBERNETES_PUBLIC_IP_ADDRESS="52.59.74.90"
+
+echo $KUBERNETES_PUBLIC_IP_ADDRESS
+```
+
+
+```
+cat > kubernetes-csr.json <<EOF
+{
+  "CN": "kubernetes",
+  "hosts": [
+    "etcd1",
+    "etcd2",
+    "controller1",
+    "controller2",
+    "worker1",
+    "worker2",
+    "10.0.0.1",
+    "10.0.0.245",
+    "10.0.0.246",
+    "10.0.0.137",
+    "10.0.0.138",
+    "10.0.0.181",
+    "10.0.0.182",
+    "${KUBERNETES_PUBLIC_IP_ADDRESS}",
+    "127.0.0.1"
+  ],
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "NO",
+      "L": "Oslo",
+      "O": "Kubernetes",
+      "OU": "Cluster",
+      "ST": "Oslo"
+    }
+  ]
+}
+EOF
+```
+
+```
+cfssl gencert \
+  -ca=ca.pem \
+  -ca-key=ca-key.pem \
+  -config=ca-config.json \
+  -profile=kubernetes \
+  kubernetes-csr.json | cfssljson -bare kubernetes
+```
+
+Actual run:
+```
+[kamran@kworkhorse ~]$ cfssl gencert   -ca=ca.pem   -ca-key=ca-key.pem   -config=ca-config.json   -profile=kubernetes   kubernetes-csr.json | cfssljson -bare kubernetes
+2016/07/18 15:47:18 [INFO] generate received request
+2016/07/18 15:47:18 [INFO] received CSR
+2016/07/18 15:47:18 [INFO] generating key: rsa-2048
+2016/07/18 15:47:18 [INFO] encoded CSR
+2016/07/18 15:47:18 [INFO] signed certificate with serial number 724227408907546570849472486117745474266150945034
+2016/07/18 15:47:18 [WARNING] This certificate lacks a "hosts" field. This makes it unsuitable for
+websites. For more information see the Baseline Requirements for the Issuance and Management
+of Publicly-Trusted Certificates, v.1.1.6, from the CA/Browser Forum (https://cabforum.org);
+specifically, section 10.2.3 ("Information Requirements").
+[kamran@kworkhorse ~]$ 
+```
+
+Todo: Why does the output say that it lacks a hosts field? 
+
+Resulting files:
+```
+[kamran@kworkhorse ~]$ ls -ltrh
+-rw-rw-r--  1 kamran kamran  232 Jul 13 13:15 ca-config.json
+-rw-rw-r--  1 kamran kamran  205 Jul 13 13:17 ca-csr.json
+-rw-rw-r--  1 kamran kamran 1.4K Jul 13 13:17 ca.pem
+-rw-------  1 kamran kamran 1.7K Jul 13 13:17 ca-key.pem
+-rw-r--r--  1 kamran kamran  997 Jul 13 13:17 ca.csr
+-rw-rw-r--  1 kamran kamran  511 Jul 18 15:47 kubernetes-csr.json
+-rw-rw-r--  1 kamran kamran 1.6K Jul 18 15:47 kubernetes.pem
+-rw-------  1 kamran kamran 1.7K Jul 18 15:47 kubernetes-key.pem
+-rw-r--r--  1 kamran kamran 1.2K Jul 18 15:47 kubernetes.csr
+[kamran@kworkhorse ~]$ 
+```
+
+```
+[kamran@kworkhorse ~]$ openssl x509 -in kubernetes.pem -text -noout
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            7e:db:7a:ed:b4:26:4f:06:19:b5:6e:64:c1:fc:f7:5a:1b:93:41:0a
+    Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=NO, ST=Oslo, L=Oslo, O=Kubernetes, OU=CA, CN=Kubernetes
+        Validity
+            Not Before: Jul 18 13:42:00 2016 GMT
+            Not After : Jul 18 13:42:00 2017 GMT
+        Subject: C=NO, ST=Oslo, L=Oslo, O=Kubernetes, OU=Cluster, CN=kubernetes
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:9a:8e:e3:db:da:21:d4:31:2e:57:84:35:39:84:
+                    26:8b:24:8b:be:98:d9:0f:ba:70:57:0f:5e:6e:71:
+                    ac:01:6b:5e:4b:b9:73:d5:e6:d6:67:87:56:86:3f:
+                    64:52:d7:d1:a5:4e:9d:10:95:bd:94:dc:a8:5c:f8:
+                    b1:93:40:dc:89:0d:18:d6:a4:51:a8:ff:58:0b:d1:
+                    63:9e:7a:a4:8c:9e:68:5f:b7:b1:dc:6e:3c:6c:94:
+                    a4:59:77:79:1b:d6:4e:97:98:25:fd:e6:87:3f:63:
+                    89:ce:b9:d1:62:74:23:06:50:aa:e4:09:2b:60:2f:
+                    d6:2a:88:69:da:d2:90:28:61:f6:d1:11:b9:ef:aa:
+                    5c:25:70:ae:f7:91:cf:34:ef:8c:5c:c1:96:83:e9:
+                    35:c4:28:8d:bb:d8:cf:4a:f9:e8:88:9d:90:19:cc:
+                    f8:6d:29:2c:48:6d:18:db:ca:95:be:2c:d8:30:d1:
+                    06:b4:11:fe:a7:76:92:14:5f:bd:9f:dd:7b:7f:0f:
+                    b5:79:76:db:6b:e7:fa:d0:fe:96:24:7c:1f:e7:3e:
+                    51:13:c3:61:13:8d:a8:92:d7:32:a8:dc:34:d2:e1:
+                    77:8c:27:ae:e3:b1:9d:d6:52:ff:e6:fd:2b:2d:05:
+                    6d:ca:dc:1c:7c:8f:35:32:bc:0b:5b:82:19:69:00:
+                    9f:df
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Key Usage: critical
+                Digital Signature, Key Encipherment
+            X509v3 Extended Key Usage: 
+                TLS Web Server Authentication, TLS Web Client Authentication
+            X509v3 Basic Constraints: critical
+                CA:FALSE
+            X509v3 Subject Key Identifier: 
+                C8:6C:FC:C6:BF:DF:39:63:DA:82:7C:22:A5:FF:B7:D8:F8:DE:17:F7
+            X509v3 Authority Key Identifier: 
+                keyid:43:B4:D8:70:0A:43:2B:61:A7:22:ED:54:69:15:D2:04:46:93:3E:E5
+
+            X509v3 Subject Alternative Name: 
+                DNS:etcd1, DNS:etcd2, DNS:controller1, DNS:controller2, DNS:worker1, DNS:worker2, IP Address:10.0.0.1, IP Address:10.0.0.245, IP Address:10.0.0.246, IP Address:10.0.0.137, IP Address:10.0.0.138, IP Address:10.0.0.181, IP Address:10.0.0.182, IP Address:52.59.74.90, IP Address:127.0.0.1
+    Signature Algorithm: sha256WithRSAEncryption
+         c2:5e:a7:e2:a6:b0:50:30:2b:53:dd:b5:8b:41:78:83:00:d2:
+         59:03:18:79:d6:75:78:78:cb:e9:de:32:3a:5c:74:90:18:39:
+         e1:4b:70:b2:e8:0f:4c:ae:ca:12:06:48:55:a1:3d:e3:dc:1c:
+         fb:aa:d7:c5:85:74:29:41:62:2b:55:4f:ff:77:33:4e:b0:32:
+         b6:6a:ea:fa:c0:e4:3b:ce:11:2d:b4:64:b2:c2:23:e2:2a:97:
+         a8:ed:7d:28:dc:0d:2c:74:8f:7c:a4:09:66:5c:d4:ce:33:ec:
+         2d:cb:a5:38:4b:c8:b4:fb:79:90:ed:58:b5:0d:9a:22:16:1c:
+         cf:1c:1d:49:12:4a:bd:f5:14:66:4b:51:5f:96:95:f0:81:e5:
+         31:9b:a6:3f:4e:4d:71:42:1c:99:33:e5:0f:87:57:0b:e7:23:
+         5e:8b:e5:96:4f:99:ca:e8:95:4c:bd:fa:a7:44:e8:cb:6c:55:
+         60:b8:bd:73:be:7a:c8:13:0c:78:d6:6e:24:79:28:4a:d9:97:
+         05:e3:9c:4a:5d:a1:a7:80:91:11:19:de:ab:4a:6a:f5:6c:94:
+         0e:39:30:14:65:7b:34:a8:08:30:2e:1b:56:19:4c:31:10:39:
+         6f:94:e5:df:6a:4c:86:47:c9:58:aa:9a:bc:08:2c:8f:76:23:
+         4f:c9:fa:9f
+[kamran@kworkhorse ~]$ 
+```
+
+Copy TLS Certs to proper locations in respective nodes:
+```
+[kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@etcd1:~/
+[kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@etcd2:~/
+[kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@controller1:~/
+[kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@controller2:~/
+[kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@worker1:~/
+[kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@worker2:~/
+```
 
