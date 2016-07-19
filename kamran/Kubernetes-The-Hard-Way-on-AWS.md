@@ -9,6 +9,8 @@ This setup will also introduce High Availability for etcd and master/controller 
 
 I am not using AWS command line utility. Everything I do here is by using AWS web interface. Though, using AWS CLI is much faster.
 
+The OS used on all the nodes is Fedora Atomic 24 64 bit.
+
 # Network setup
 
 I have created a new VPC on AWS with a base network address of 10.0.0.0/16 .
@@ -26,7 +28,7 @@ There are 6 nodes in total for main Kubernetes functionality, with the following
 
 I will use the same /etc/hosts on all nodes, so I do not have to keep track of the IP addresses in various config files.
 
-The /etc/hosts file I will use is:
+The /etc/hosts file I am using is:
 ```
 127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
 10.0.0.245	etcd1
@@ -36,6 +38,9 @@ The /etc/hosts file I will use is:
 10.0.0.181	worker1
 10.0.0.182	worker2
 ```
+
+** Note: ** When you edit the hosts file to all nodes, also use that time to disable SELINUX on all nodes, to save pain and grief later.
+
 
 On AWS, I have allowed all traffic within this VPC from 10.0.0.0/16. Also all traffic is allowed from my IP.
 
@@ -363,4 +368,141 @@ Copy TLS Certs to proper locations in respective nodes:
 [kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@worker1:~/
 [kamran@kworkhorse ~]$ scp -i Downloads/Kamran-AWS.pem  ca.pem kubernetes-key.pem kubernetes.pem  fedora@worker2:~/
 ```
+
+# Setup HA etcd cluster:
+
+Run the following commands on etcd1, etcd2:
+
+SSH into each machine using ssh command. 
+
+etcd software is already pre-installed on Fedora Atomic, we just need to configure it.
+
+```
+[kamran@kworkhorse ~]$ ssh -i Downloads/Kamran-AWS.pem fedora@etcd1
+```
+
+```
+[fedora@ip-10-0-0-245 ~]$ sudo rpm -q etcd
+etcd-2.2.5-5.fc24.x86_64
+```
+
+
+Copy the three certificate (.pem) files to etcd directory:
+```
+[fedora@ip-10-0-0-245 ~]$ sudo mv  /home/fedora/*.pem /etc/etcd/
+```
+
+
+Create the etcd systemd unit file (as it is - i.e. Do not replcace ETCD_NAME and INTERNAL_IP yet):
+``` 
+cat > etcd.service <<"EOF"
+[Unit]
+Description=etcd
+Documentation=https://github.com/coreos
+
+[Service]
+ExecStart=/usr/bin/etcd --name ETCD_NAME \
+  --cert-file=/etc/etcd/kubernetes.pem \
+  --key-file=/etc/etcd/kubernetes-key.pem \
+  --peer-cert-file=/etc/etcd/kubernetes.pem \
+  --peer-key-file=/etc/etcd/kubernetes-key.pem \
+  --trusted-ca-file=/etc/etcd/ca.pem \
+  --peer-trusted-ca-file=/etc/etcd/ca.pem \
+  --initial-advertise-peer-urls https://INTERNAL_IP:2380 \
+  --listen-peer-urls https://INTERNAL_IP:2380 \
+  --listen-client-urls https://INTERNAL_IP:2379,http://127.0.0.1:2379 \
+  --advertise-client-urls https://INTERNAL_IP:2379 \
+  --initial-cluster-token etcd-cluster-0 \
+  --initial-cluster etcd1=https://10.0.0.245:2380,etcd2=https://10.0.0.246:2380 \
+  --initial-cluster-state new \
+  --data-dir=/var/lib/etcd
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Now, set INTERNAL_IP and ETCD_NAME on the shell:
+```
+[fedora@ip-10-0-0-245 ~]$ INTERNAL_IP=10.0.0.245
+[fedora@ip-10-0-0-245 ~]$ ETCD_NAME=etcd1
+
+[fedora@ip-10-0-0-245 ~]$ echo $INTERNAL_IP 
+10.0.0.245
+[fedora@ip-10-0-0-245 ~]$ echo $ETCD_NAME 
+etcd1
+[fedora@ip-10-0-0-245 ~]$ 
+```
+
+Adjust the service will with this values using sed , and move the service file to proper location:
+
+```
+[fedora@ip-10-0-0-245 ~]$ sed -i s/INTERNAL_IP/$INTERNAL_IP/g etcd.service
+[fedora@ip-10-0-0-245 ~]$ sed -i s/ETCD_NAME/$ETCD_NAME/g etcd.service
+[fedora@ip-10-0-0-245 ~]$ sudo mv etcd.service /etc/systemd/system/
+```
+
+
+Start etcd on this node:
+```
+sudo systemctl daemon-reload
+sudo systemctl enable etcd
+sudo systemctl start etcd
+```
+
+Verify:
+```
+[fedora@ip-10-0-0-245 ~]$ sudo systemctl status etcd --no-pager
+● etcd.service - etcd
+   Loaded: loaded (/etc/systemd/system/etcd.service; enabled; vendor preset: disabled)
+   Active: active (running) since Tue 2016-07-19 11:57:07 UTC; 14s ago
+     Docs: https://github.com/coreos
+ Main PID: 1229 (etcd)
+    Tasks: 7 (limit: 512)
+   CGroup: /system.slice/etcd.service
+           └─1229 /usr/bin/etcd --name etcd1 --cert-file=/etc/etcd/kubernetes.pem --key-file=/etc/etcd/kubernetes-key.pem --peer-cert-file=/e...
+
+Jul 19 11:57:18 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f [logterm: 1, index: 2] sent vote request to d41...rm 10
+Jul 19 11:57:19 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f is starting a new election at term 10
+Jul 19 11:57:19 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f became candidate at term 11
+Jul 19 11:57:19 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f received vote from 8c16337be4f88b1f at term 11
+Jul 19 11:57:19 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f [logterm: 1, index: 2] sent vote request to d41...rm 11
+Jul 19 11:57:20 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f is starting a new election at term 11
+Jul 19 11:57:20 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f became candidate at term 12
+Jul 19 11:57:20 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f received vote from 8c16337be4f88b1f at term 12
+Jul 19 11:57:20 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: 8c16337be4f88b1f [logterm: 1, index: 2] sent vote request to d41...rm 12
+Jul 19 11:57:21 ip-10-0-0-245.eu-central-1.compute.internal etcd[1229]: publish error: etcdserver: request timed out
+Hint: Some lines were ellipsized, use -l to show in full.
+[fedora@ip-10-0-0-245 ~]$ 
+```
+
+Though at this point the etcd cluster is unhealthy, as we have not configured other etcd node yet.
+
+```
+[fedora@ip-10-0-0-245 ~]$ sudo etcdctl --ca-file=/etc/etcd/ca.pem cluster-health
+member 8c16337be4f88b1f is unreachable: no available published client urls
+member d41d031490df6efc is unreachable: no available published client urls
+cluster is unhealthy
+[fedora@ip-10-0-0-245 ~]$
+```
+
+At this point, prepare the other etcd node by repeating the above steps.
+
+Once the other etcd nodes are also configured, the etcd cluster status should appear healthy:
+
+```
+[fedora@ip-10-0-0-246 ~]$ sudo etcdctl --ca-file=/etc/etcd/ca.pem cluster-health
+member 8c16337be4f88b1f is healthy: got healthy result from https://10.0.0.245:2379
+member d41d031490df6efc is healthy: got healthy result from https://10.0.0.246:2379
+cluster is healthy
+[fedora@ip-10-0-0-246 ~]$ 
+```
+
+-------------- 
+
+
+# Bootstrapping an H/A Kubernetes Control Plane
+
 
