@@ -9,7 +9,9 @@ This setup will also introduce High Availability for etcd and master/controller 
 
 I am not using AWS command line utility. Everything I do here is by using AWS web interface. Though, using AWS CLI is much faster.
 
-The OS used on all the nodes is Fedora Atomic 24 64 bit.
+The OS used on all the nodes is Fedora Atomic 24 64 bit. Exception: The controller nodes are Fedora Cloud Base , not Fedora Atomic. It is because Fedora Atomic does not let us manage individual packages, and we needed latest Kubernetes 1.3 to work with the way we want it to work, especially with CIDR. Fedora Cloud Base is minimal Fedora and you can add packages on top of it. For more information and differences between different types of Fedora OS, look here: [http://fedoracloud.readthedocs.io/en/latest/whatis.html](http://fedoracloud.readthedocs.io/en/latest/whatis.html)
+
+Also, note that we can manage AWS VPC's router and add routes of our nodes. Ideally we should not need flannel.
 
 # Network setup
 
@@ -25,8 +27,12 @@ There are 6 nodes in total for main Kubernetes functionality, with the following
 * worker1 - 52.59.249.129 - 10.0.0.181
 * worker2 - 54.93.34.227 - 10.0.0.182
 
+Cluster / Service IPs: 10.32.0.0/24 ( not configured on any interaface of any node). 
+Cluster CIDR (like flannel network) = 10.200.0.0/16 (each node will get a subnet out of this network space to use for containers).
 
 I will use the same /etc/hosts on all nodes, so I do not have to keep track of the IP addresses in various config files.
+
+
 
 The /etc/hosts file I am using is:
 ```
@@ -504,5 +510,65 @@ cluster is healthy
 
 
 # Bootstrapping an H/A Kubernetes Control Plane
+We will also create a frontend load balancer with a public IP address for remote access to the API servers and H/A.
+
+The Kubernetes components that make up the control plane include the following components:
+
+* Kubernetes API Server
+* Kubernetes Scheduler
+* Kubernetes Controller Manager
+
+Each component is being run on the same machines for the following reasons:
+
+* The Scheduler and Controller Manager are tightly coupled with the API Server
+* Only one Scheduler and Controller Manager can be active at a given time, but it's ok to run multiple at the same time. Each component will elect a leader via the API Server.
+* Running multiple copies of each component is required for H/A
+* Running each component next to the API Server eases configuration.
+
+The following commands are to be repeated on all three controller managers:
+Connect each controller manager using `ssh` command.
+
+
+```
+[kamran@kworkhorse ~]$ ssh -i Downloads/Kamran-AWS.pem fedora@controller1
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+
+
+Setup TLS certificates in correct locations:
+```
+sudo mkdir -p /var/lib/kubernetes
+sudo mv ca.pem kubernetes-key.pem kubernetes.pem /var/lib/kubernetes/
+```
+
+Now, we see if we have the necessary software already pre-installed in these nodes. We are interested in kube-apiserver, kube-controller-manager, kube-scheduler and kubectl. Since the kubernetes controller nodes are based on Fedora Cloud Base, they do not have kubernetes installed in them. (which is good!)
+
+```
+[fedora@ip-10-0-0-137 ~]$ rpm -qa | grep kube
+[fedora@ip-10-0-0-137 ~]$
+```
+
+## Download and install Kubernetes control libraries:
+
+**Note:** If you are using kubernetes 1.2, you need to remove those and install kubernetes 1.3.  Remove the existing Kubernetes packages from the controller node, as they are older version, and do not support newer flags which we are going to use in configurations. Also the new CIDR network may be a problem with older kubernetes versions, so we install new versions. Also make sure to remove their left over config files too. It is because our service files have all the configurations in them, and having a separate config file will result in confusion.
+
+
+Download and install latest Kubernetes (1.3):
+
+```
+[fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-apiserver
+[fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-controller-manager
+[fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-controller-manager^C
+[fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-scheduler
+[fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubectl
+
+
+[fedora@ip-10-0-0-137 ~]$ chmod +x kube*
+
+[fedora@ip-10-0-0-137 ~]$ sudo mv kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/bin/
+``` 
+
+**Note:** It needs to be ensured that the kubernetes binaries do not fail because of some non-existant pacakge. I hope these binaries are statically compiled and have everything built into them, which they need! (todo)
 
 
