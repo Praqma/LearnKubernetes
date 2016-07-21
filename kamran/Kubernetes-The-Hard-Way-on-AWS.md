@@ -559,7 +559,6 @@ Download and install latest Kubernetes (1.3):
 ```
 [fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-apiserver
 [fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-controller-manager
-[fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-controller-manager^C
 [fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-scheduler
 [fedora@ip-10-0-0-137 ~]$ curl -s -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubectl
 
@@ -571,4 +570,273 @@ Download and install latest Kubernetes (1.3):
 
 **Note:** It needs to be ensured that the kubernetes binaries do not fail because of some non-existant pacakge. I hope these binaries are statically compiled and have everything built into them, which they need! (todo)
 
+
+
+## Kubernetes API Server
+
+Setup Authentication and Authorization
+
+### Authentication
+Token based authentication will be used to limit access to Kubernetes API.
+
+```
+[fedora@ip-10-0-0-137 ~]$ curl -O  https://raw.githubusercontent.com/kelseyhightower/kubernetes-the-hard-way/master/token.csv
+
+[fedora@ip-10-0-0-137 ~]$ cat token.csv 
+chAng3m3,admin,admin
+chAng3m3,scheduler,scheduler
+chAng3m3,kubelet,kubelet
+[fedora@ip-10-0-0-137 ~]$
+
+[fedora@ip-10-0-0-137 ~]$ sudo mv token.csv /var/lib/kubernetes/
+```
+
+### Authorization
+
+Attribute-Based Access Control (ABAC) will be used to authorize access to the Kubernetes API. In this lab ABAC will be setup using the Kuberentes policy file backend as documented in the Kubernetes authorization guide.
+
+```
+[fedora@ip-10-0-0-137 ~]$ curl -sO  https://raw.githubusercontent.com/kelseyhightower/kubernetes-the-hard-way/master/authorization-policy.jsonl
+
+[fedora@ip-10-0-0-137 ~]$ cat authorization-policy.jsonl 
+{"apiVersion": "abac.authorization.kubernetes.io/v1beta1", "kind": "Policy", "spec": {"user":"*", "nonResourcePath": "*", "readonly": true}}
+{"apiVersion": "abac.authorization.kubernetes.io/v1beta1", "kind": "Policy", "spec": {"user":"admin", "namespace": "*", "resource": "*", "apiGroup": "*"}}
+{"apiVersion": "abac.authorization.kubernetes.io/v1beta1", "kind": "Policy", "spec": {"user":"scheduler", "namespace": "*", "resource": "*", "apiGroup": "*"}}
+{"apiVersion": "abac.authorization.kubernetes.io/v1beta1", "kind": "Policy", "spec": {"user":"kubelet", "namespace": "*", "resource": "*", "apiGroup": "*"}}
+{"apiVersion": "abac.authorization.kubernetes.io/v1beta1", "kind": "Policy", "spec": {"group":"system:serviceaccounts", "namespace": "*", "resource": "*", "apiGroup": "*", "nonResourcePath": "*"}}
+[fedora@ip-10-0-0-137 ~]$ 
+
+[fedora@ip-10-0-0-137 ~]$ sudo mv authorization-policy.jsonl /var/lib/kubernetes/
+```
+
+
+## Create the systemd unit file
+
+```
+[fedora@ip-10-0-0-137 ~]$ INTERNAL_IP=10.0.0.137
+
+[fedora@ip-10-0-0-137 ~]$ echo $INTERNAL_IP 
+10.0.0.137
+[fedora@ip-10-0-0-137 ~]$
+```
+
+```
+cat > kube-apiserver.service <<"EOF"
+[Unit]
+Description=Kubernetes API Server
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+[Service]
+ExecStart=/usr/bin/kube-apiserver \
+  --admission-control=NamespaceLifecycle,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota \
+  --advertise-address=INTERNAL_IP \
+  --allow-privileged=true \
+  --apiserver-count=2 \
+  --authorization-mode=ABAC \
+  --authorization-policy-file=/var/lib/kubernetes/authorization-policy.jsonl \
+  --bind-address=0.0.0.0 \
+  --enable-swagger-ui=true \
+  --etcd-cafile=/var/lib/kubernetes/ca.pem \
+  --insecure-bind-address=0.0.0.0 \
+  --kubelet-certificate-authority=/var/lib/kubernetes/ca.pem \
+  --etcd-servers=https://10.0.0.245:2379,https://10.0.0.246:2379 \
+  --service-account-key-file=/var/lib/kubernetes/kubernetes-key.pem \
+  --service-cluster-ip-range=10.32.0.0/24 \
+  --service-node-port-range=30000-32767 \
+  --tls-cert-file=/var/lib/kubernetes/kubernetes.pem \
+  --tls-private-key-file=/var/lib/kubernetes/kubernetes-key.pem \
+  --token-auth-file=/var/lib/kubernetes/token.csv \
+  --v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+
+```
+[fedora@ip-10-0-0-137 ~]$ sed -i s/INTERNAL_IP/$INTERNAL_IP/g kube-apiserver.service
+[fedora@ip-10-0-0-137 ~]$ sudo mv kube-apiserver.service /etc/systemd/system/
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl daemon-reload
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl enable kube-apiserver
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-apiserver.service to /etc/systemd/system/kube-apiserver.service.
+[fedora@ip-10-0-0-137 ~]$ 
+
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl start kube-apiserver
+
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl status kube-apiserver --no-pager
+● kube-apiserver.service - Kubernetes API Server
+   Loaded: loaded (/etc/systemd/system/kube-apiserver.service; enabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-07-21 09:15:48 UTC; 5s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 2530 (kube-apiserver)
+    Tasks: 6 (limit: 512)
+   CGroup: /system.slice/kube-apiserver.service
+           └─2530 /usr/bin/kube-apiserver --admission-control=NamespaceLifecycle,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota...
+
+Jul 21 09:15:48 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: W0721 09:15:48.774086    2530 controller.go:307] Resett...n:""
+Jul 21 09:15:48 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: [restful] 2016/07/21 09:15:48 log.go:30: [restful/swagg...api/
+Jul 21 09:15:48 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: [restful] 2016/07/21 09:15:48 log.go:30: [restful/swagg...-ui/
+Jul 21 09:15:48 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: I0721 09:15:48.796906    2530 genericapiserver.go:690] ...6443
+Jul 21 09:15:48 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: I0721 09:15:48.797022    2530 genericapiserver.go:734] ...8080
+Jul 21 09:15:49 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: I0721 09:15:49.576728    2530 handlers.go:165] GET /api…47738]
+Jul 21 09:15:49 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: I0721 09:15:49.577621    2530 handlers.go:165] GET /api…47730]
+Jul 21 09:15:49 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: I0721 09:15:49.578230    2530 handlers.go:165] GET /api…47732]
+Jul 21 09:15:49 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: I0721 09:15:49.578804    2530 handlers.go:165] GET /api…47734]
+Jul 21 09:15:49 ip-10-0-0-137.eu-central-1.compute.internal kube-apiserver[2530]: I0721 09:15:49.579343    2530 handlers.go:165] GET /api…47736]
+Hint: Some lines were ellipsized, use -l to show in full.
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+API service started without a failure! Great!
+
+
+
+## Kubernetes Controller Manager
+```
+cat > kube-controller-manager.service <<"EOF"
+[Unit]
+Description=Kubernetes Controller Manager
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+[Service]
+ExecStart=/usr/bin/kube-controller-manager \
+  --allocate-node-cidrs=true \
+  --cluster-cidr=10.200.0.0/16 \
+  --cluster-name=kubernetes \
+  --leader-elect=true \
+  --master=http://INTERNAL_IP:8080 \
+  --root-ca-file=/var/lib/kubernetes/ca.pem \
+  --service-account-private-key-file=/var/lib/kubernetes/kubernetes-key.pem \
+  --service-cluster-ip-range=10.32.0.0/24 \
+  --v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+``` 
+
+```
+[fedora@ip-10-0-0-137 ~]$ sed -i s/INTERNAL_IP/$INTERNAL_IP/g kube-controller-manager.service
+[fedora@ip-10-0-0-137 ~]$ sudo mv kube-controller-manager.service /etc/systemd/system/
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl daemon-reload
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl enable kube-controller-manager
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-controller-manager.service to /etc/systemd/system/kube-controller-manager.service.
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl start kube-controller-manager
+
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl status kube-controller-manager --no-pager
+● kube-controller-manager.service - Kubernetes Controller Manager
+   Loaded: loaded (/etc/systemd/system/kube-controller-manager.service; enabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-07-21 09:42:05 UTC; 7s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 2596 (kube-controller)
+    Tasks: 5 (limit: 512)
+   CGroup: /system.slice/kube-controller-manager.service
+           └─2596 /usr/bin/kube-controller-manager --allocate-node-cidrs=true --cluster-cidr=10.200.0.0/16 --cluster-name=kubernetes --leader...
+
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: I0721 09:42:05.499016    2596 pet_set.go:144] S...ler
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: I0721 09:42:05.518558    2596 plugins.go:333] L...bs"
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: I0721 09:42:05.518721    2596 plugins.go:333] L...pd"
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: I0721 09:42:05.518833    2596 plugins.go:333] L...er"
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: E0721 09:42:05.519863    2596 util.go:45] Metri...red
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: I0721 09:42:05.520893    2596 attach_detach_con...ler
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: W0721 09:42:05.522418    2596 request.go:347] F...ly.
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: W0721 09:42:05.529666    2596 request.go:347] F...ly.
+Jul 21 09:42:05 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: I0721 09:42:05.584072    2596 endpoints_control...tes
+Jul 21 09:42:10 ip-10-0-0-137.eu-central-1.compute.internal kube-controller-manager[2596]: I0721 09:42:10.484616    2596 nodecontroller.go...de.
+Hint: Some lines were ellipsized, use -l to show in full.
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+This service runs without failing! Great!
+
+
+
+## Kubernetes Scheduler
+
+```
+cat > kube-scheduler.service <<"EOF"
+[Unit]
+Description=Kubernetes Scheduler
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+[Service]
+ExecStart=/usr/bin/kube-scheduler \
+  --leader-elect=true \
+  --master=http://INTERNAL_IP:8080 \
+  --v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+
+```
+[fedora@ip-10-0-0-137 ~]$ sed -i s/INTERNAL_IP/$INTERNAL_IP/g kube-scheduler.service
+[fedora@ip-10-0-0-137 ~]$ sudo mv kube-scheduler.service /etc/systemd/system/
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl daemon-reload
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl enable kube-scheduler
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-scheduler.service to /etc/systemd/system/kube-scheduler.service.
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl start kube-scheduler
+
+
+[fedora@ip-10-0-0-137 ~]$ sudo systemctl status kube-scheduler --no-pager
+● kube-scheduler.service - Kubernetes Scheduler
+   Loaded: loaded (/etc/systemd/system/kube-scheduler.service; enabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-07-21 10:39:41 UTC; 6s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 2717 (kube-scheduler)
+    Tasks: 5 (limit: 512)
+   CGroup: /system.slice/kube-scheduler.service
+           └─2717 /usr/bin/kube-scheduler --leader-elect=true --master=http://10.0.0.137:8080 --v=2
+
+Jul 21 10:39:41 ip-10-0-0-137.eu-central-1.compute.internal systemd[1]: Started Kubernetes Scheduler.
+Jul 21 10:39:41 ip-10-0-0-137.eu-central-1.compute.internal kube-scheduler[2717]: I0721 10:39:41.858568    2717 factory.go:255] Creating ...der'
+Jul 21 10:39:41 ip-10-0-0-137.eu-central-1.compute.internal kube-scheduler[2717]: I0721 10:39:41.858781    2717 factory.go:301] creating sche...
+Jul 21 10:39:41 ip-10-0-0-137.eu-central-1.compute.internal kube-scheduler[2717]: E0721 10:39:41.878924    2717 event.go:257] Could not const...
+Jul 21 10:39:41 ip-10-0-0-137.eu-central-1.compute.internal kube-scheduler[2717]: I0721 10:39:41.879113    2717 leaderelection.go:215] su...uler
+Hint: Some lines were ellipsized, use -l to show in full.
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+Though we have configured only one master/controller for now, we can check the status:
+
+```
+[fedora@ip-10-0-0-137 ~]$ kubectl get componentstatuses
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-1               Healthy   {"health": "true"}   
+etcd-0               Healthy   {"health": "true"}   
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+Repeat all these steps on remaining controller nodes. :)
+
+```
+[fedora@ip-10-0-0-138 ~]$ kubectl get componentstatuses
+NAME                 STATUS    MESSAGE              ERROR
+controller-manager   Healthy   ok                   
+scheduler            Healthy   ok                   
+etcd-1               Healthy   {"health": "true"}   
+etcd-0               Healthy   {"health": "true"}   
+[fedora@ip-10-0-0-138 ~]$
+```
+
+Notice that no matter how many controllers you have (three in our case), the word controller-manager appears only once in the output of the above command. That is probably because kubectl queries localhost and not all the controller nodes. 
+
+Future work:
+To make it Highly Available, from outside, we would need to setup some sort of load balancer. Also to make it HA from the inside, we need to setup a (haproxy based) loadbalancer, which will be setup as a separate VM. (todo / interesting). May be these two load balancers can be combined into one with two interfaces?! (todo)
+
+
+
+
+ 
 
