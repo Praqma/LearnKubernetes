@@ -132,7 +132,7 @@ Now we have the following setup inside out Kubernetes cluster.
 
 ![kubernetesLoadbalanceTopology](images/kubernetes_loadbalancer_topoloty.png)
 
-We now need to point the dns entry webserver.example.com to the ip of the node running out loadbalancer. To find it, exec:
+We now need to point the dns entry webserver.example.com to the ip of the node running our loadbalancer. To find it, exec:
 ```
 kubectl get pods --namespace=production -o wide |grep "nginx-ingress"
 
