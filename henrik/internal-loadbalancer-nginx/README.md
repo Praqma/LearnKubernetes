@@ -20,7 +20,6 @@ kubectl run production-nginx --image=nginx --replicas=4 --port=80 --namespace=pr
 
 ### Test a pod, to see that it response to trafic
 Temporarly forward trafic to a pod, through kubectl on your machine to test a pod.
-Syntax : kubectl port-forward <POD_NAME> <LOCAL_PORT>:<POD_PORT>
 
 ```
 kubectl get pods --namespace=production
