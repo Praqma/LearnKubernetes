@@ -1,7 +1,7 @@
-### Kubernetes internal loadbalancer
+# Kubernetes internal loadbalancer
 ## In this excersise we will create a loadbalancer on one of our nodes, that points to a service. The service has multiple endpoints (pods) running via a deployment keeping them alive at all times.
 
-# A namespace
+### A namespace
 First, we create a namespace for our project. Lets call it production.
 ```
 kubectl create namespace production
@@ -12,13 +12,13 @@ View namespaces in the cluster to see if it was created
 kubectl get namespaces --show-labels
 ```
 
-# Running the deployment
+### Running the deployment
 Running your first deployment with four pods, in the namespace production. We will use this later to be the landingpage for our loadbalancer. 
 ```
 kubectl run production-nginx --image=nginx --replicas=4 --port=80 --namespace=production 
 ```
 
-# Test a pod, to see that it response to trafic
+### Test a pod, to see that it response to trafic
 Temporarly forward trafic to a pod, through kubectl on your machine to test a pod.
 Syntax : kubectl port-forward <POD_NAME> <LOCAL_PORT>:<POD_PORT>
 
@@ -34,7 +34,7 @@ kubectl port-forward production-nginx-1614527241-9taez 8080:80
 curl localhost:8080
 ```
 
-# Services, create a service for your nginx
+### Services, create a service for your nginx
 Now we need a service to keep an eye on our pods. This will be our main source of endpoints.
 
 ```
@@ -54,7 +54,7 @@ spec:
 kubectl create -f service.yaml --namespace=production
 ```
 
-# Create a secret with tls for SSL in nginx
+### Create a secret with tls for SSL in nginx
 We need to run our loadbalancer with SSL, and therefor need some TLS certificates. We store these in secrets in the Kubernetes cluster.
 ```
 cat nginx-secret.yaml
@@ -71,7 +71,7 @@ kubectl create -f nginx-secret.yaml --namespace=production
 ```
 
 
-# Creating an Ingress rule
+### Creating an Ingress rule
 The ingress rule is where we define what we want loadbalanced, and where the resource is found. In this example we create an ingress for webserver.example.com and points it to our nginx service. In path we define / as the root of the three. We also define what port we want to hit out pods at, namly port 80.
 ```
 cat ingress-rules.yaml
@@ -96,7 +96,7 @@ spec:
 kubectl create -f ingress-rules.yaml --namespace=production
 ```
 
-# Create a nginx loadbalancer that uses the ingress rule
+### Create a nginx loadbalancer that uses the ingress rule
 Now we need to start the loadbalancer. Here we use a special nginx image that uses our ingress object to find resources. If these changes in the cluster, it will reconfigure and reload automaticly. 
 ```
 cat nginx-loadbal.yaml
@@ -128,7 +128,7 @@ spec:
 kubectl create -f nginx-loadbal.yaml --namespace=production
 ```
 
-# Hitting it
+### Hitting it
 Now we have the following setup inside out Kubernetes cluster.
 ![kubernetesLoadbalanceTopology](images/kubernetes_loadbalancer_topoloty)
 
@@ -153,7 +153,7 @@ If you dont have an DNS you can add entries to your hosts file like this:
 sudo echo "10.245.1.4 webserver.example.com" >> /etc/hosts
 ```
 
-# Connect to our service
+### Connect to our service
 Now we can curl our service through the loadbalancer. 
 We use -L to follow the redirect from http to https, and --insecure as our TLS certificates are not trusted.
 ```
@@ -162,7 +162,7 @@ curl -L --insecure webserver.example.com
 
 I hope everything work, and that you now have a working loadbalancer in Kubernetes. Its easy to add more services to your ingress and add complexity.
 
-# Cleanup
+### Cleanup
 kubectl delete deployment production-nginx --namespace=production
 kubectl delete rc nginx-ingress-rc --namespace=production
 kubectl delete ingress nginx-ingress --namespace=production
