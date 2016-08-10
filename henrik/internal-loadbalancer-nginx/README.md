@@ -164,10 +164,13 @@ curl -L --insecure webserver.example.com
 I hope everything work, and that you now have a working loadbalancer in Kubernetes. Its easy to add more services to your ingress and add complexity.
 
 ### Cleanup
+Run these commands to remove the deployment, rc, ingress, secret, service and namespace from your cluster.
+```
 kubectl delete deployment production-nginx --namespace=production
 kubectl delete rc nginx-ingress-rc --namespace=production
 kubectl delete ingress nginx-ingress --namespace=production
 kubectl delete secret nginx-secret --namespace=production
 kubectl delete services nginx --namespace=production
 kubectl delete namespace production
+```
 
