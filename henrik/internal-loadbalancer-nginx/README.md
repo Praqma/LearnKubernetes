@@ -130,6 +130,7 @@ kubectl create -f nginx-loadbal.yaml --namespace=production
 
 ### Hitting it
 Now we have the following setup inside out Kubernetes cluster.
+
 ![kubernetesLoadbalanceTopology](images/kubernetes_loadbalancer_topoloty.png)
 
 We now need to point the dns entry webserver.example.com to the ip of the node running out loadbalancer. To find it, exec:
