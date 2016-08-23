@@ -20,7 +20,6 @@ kubectl run production-nginx --image=nginx --replicas=4 --port=80 --namespace=pr
 
 ### Test a pod, to see that it response to trafic
 Temporarly forward trafic to a pod, through kubectl on your machine to test a pod.
-Syntax : kubectl port-forward <POD_NAME> <LOCAL_PORT>:<POD_PORT>
 
 ```
 kubectl get pods --namespace=production
@@ -130,9 +129,10 @@ kubectl create -f nginx-loadbal.yaml --namespace=production
 
 ### Hitting it
 Now we have the following setup inside out Kubernetes cluster.
+
 ![kubernetesLoadbalanceTopology](images/kubernetes_loadbalancer_topoloty.png)
 
-We now need to point the dns entry webserver.example.com to the ip of the node running out loadbalancer. To find it, exec:
+We now need to point the dns entry webserver.example.com to the ip of the node running our loadbalancer. To find it, exec:
 ```
 kubectl get pods --namespace=production -o wide |grep "nginx-ingress"
 
@@ -163,10 +163,13 @@ curl -L --insecure webserver.example.com
 I hope everything work, and that you now have a working loadbalancer in Kubernetes. Its easy to add more services to your ingress and add complexity.
 
 ### Cleanup
+Run these commands to remove the deployment, rc, ingress, secret, service and namespace from your cluster.
+```
 kubectl delete deployment production-nginx --namespace=production
 kubectl delete rc nginx-ingress-rc --namespace=production
 kubectl delete ingress nginx-ingress --namespace=production
 kubectl delete secret nginx-secret --namespace=production
 kubectl delete services nginx --namespace=production
 kubectl delete namespace production
+```
 
