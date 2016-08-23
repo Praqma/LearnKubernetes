@@ -3,6 +3,7 @@
 
 ### A small example
 This a a poor mans version of an eventlistener. There are examples online written in Go and Java that tabs directly into the api server.
+
 kubectl get has an events function that gives us all the events in the namespace default. We can specify another namespace if we want with --namespace=[namespace-name]. By giving it the --watch flag, we will keep getting events, when they happens in the cluster. Now, we only want new events when we start our script, so using --watch-only=true will give us that.
 
 By using awk on the output, we can react on the output from kubectl and call commands based on that.
