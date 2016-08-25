@@ -48,7 +48,7 @@ The /etc/hosts file I am using is:
 ** Note: ** When you edit the hosts file to all nodes, also use that time to disable SELINUX on all nodes, to save pain and grief later.
 
 
-On AWS, I have allowed all traffic within this VPC from 10.0.0.0/16. Also all traffic is allowed from my IP.
+On AWS Firewall/Security group, I have allowed all traffic within this VPC from 10.0.0.0/16. Also all traffic is allowed from my IP.
 
 # Reserve a public IP address for Kubernetes control plane, to be used from the outside world to connect to Kubernetes
 
@@ -832,11 +832,274 @@ etcd-0               Healthy   {"health": "true"}
 
 Notice that no matter how many controllers you have (three in our case), the word controller-manager appears only once in the output of the above command. That is probably because kubectl queries localhost and not all the controller nodes. 
 
-Future work:
+
+
+## Future work:
 To make it Highly Available, from outside, we would need to setup some sort of load balancer. Also to make it HA from the inside, we need to setup a (haproxy based) loadbalancer, which will be setup as a separate VM. (todo / interesting). May be these two load balancers can be combined into one with two interfaces?! (todo)
 
+Note that at this point, Kelsey sets up an outside/frontend load balancer for these controllers. [https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/04-kubernetes-controller.md](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/04-kubernetes-controller.md) 
 
 
+# Bootstrapping Kubernetes Workers
 
+Reference: [https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/05-kubernetes-worker.md](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/05-kubernetes-worker.md)
+
+**Note:** The OS on these nodes is changed to Fedora cloud base, because Fedora Atomic does not allow to add anything to the file system.
+* Fedora-Cloud-Base-24-20160823.0.x86_64-eu-central-1-HVM-standard-0 - ami-2958a946
+
+
+SSH into each worker node, and run the following commands.
+
+## Move the TLS certificates in place
+
+```
+sudo mkdir -p /var/lib/kubernetes
+
+sudo mv ca.pem kubernetes-key.pem kubernetes.pem /var/lib/kubernetes/
+``` 
+
+## Docker
+
+Kubernetes should be compatible with the Docker 1.9.x - 1.11.x:
+
+```
+curl -O https://get.docker.com/builds/Linux/x86_64/docker-1.11.2.tgz
+tar xf docker-1.11.2.tgz
+sudo cp docker/docker* /usr/bin/
+```
+
+
+Create docker service file:
+
+```
+sudo sh -c 'echo "[Unit]
+Description=Docker Application Container Engine
+Documentation=http://docs.docker.io
+
+[Service]
+ExecStart=/usr/bin/docker daemon \
+  --iptables=false \
+  --ip-masq=false \
+  --host=unix:///var/run/docker.sock \
+  --log-level=error \
+  --storage-driver=overlay
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/docker.service'
+```
+
+**Note:** Do not use multi.user.wants in the service file's path above.
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable docker
+sudo systemctl start docker
+```
+
+
+```
+[fedora@ip-10-0-0-182 ~]$ sudo docker version
+Client:
+ Version:      1.11.2
+ API version:  1.23
+ Go version:   go1.5.4
+ Git commit:   b9f10c9
+ Built:        Wed Jun  1 21:20:08 2016
+ OS/Arch:      linux/amd64
+
+Server:
+ Version:      1.11.2
+ API version:  1.23
+ Go version:   go1.5.4
+ Git commit:   b9f10c9
+ Built:        Wed Jun  1 21:20:08 2016
+ OS/Arch:      linux/amd64
+[fedora@ip-10-0-0-182 ~]$ 
+```
+
+
+## Kubectl, kube-proxy and kubelet
+
+The Kubernetes kubelet no longer relies on docker networking for pods! The Kubelet can now use CNI - the Container Network Interface to manage machine level networking requirements.
+
+```
+sudo mkdir -p /opt/cni
+curl -O https://storage.googleapis.com/kubernetes-release/network-plugins/cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz
+sudo tar xf cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz -C /opt/cni
+```
+
+
+```
+[fedora@ip-10-0-0-181 ~]$ ls /opt/cni/bin/
+bridge  cnitool  dhcp  flannel  host-local  ipvlan  loopback  macvlan  ptp  tuning
+[fedora@ip-10-0-0-181 ~]$ 
+```
+
+## Download and install the Kubernetes worker binaries:
+
+```
+curl -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubectl
+curl -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kube-proxy
+curl -O https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubelet
+
+chmod +x kubectl kube-proxy kubelet
+sudo mv kubectl kube-proxy kubelet /usr/bin/
+``` 
+
+```
+sudo mkdir -p /var/lib/kubelet/
+```
+
+
+Mke sure to put in the internal IP address of the controller1 below for 'server'.
+```
+sudo sh -c 'echo "apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority: /var/lib/kubernetes/ca.pem
+    server: https://10.0.0.137:6443
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubelet
+  name: kubelet
+current-context: kubelet
+users:
+- name: kubelet
+  user:
+    token: chAng3m3" > /var/lib/kubelet/kubeconfig'
+```
+**Note:** We have used only one controller's address in this config file. Ideally, we should have a load balancer for this.
+
+
+## Create the kubelet systemd unit file:
  
+```
+sudo sh -c 'echo "[Unit]
+Description=Kubernetes Kubelet
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/usr/bin/kubelet \
+  --allow-privileged=true \
+  --api-servers=https://10.0.0.137:6443,https://10.0.0.138:6443 \
+  --cloud-provider= \
+  --cluster-dns=10.32.0.10 \
+  --cluster-domain=cluster.local \
+  --configure-cbr0=true \
+  --container-runtime=docker \
+  --docker=unix:///var/run/docker.sock \
+  --network-plugin=kubenet \
+  --kubeconfig=/var/lib/kubelet/kubeconfig \
+  --reconcile-cidr=true \
+  --serialize-image-pulls=false \
+  --tls-cert-file=/var/lib/kubernetes/kubernetes.pem \
+  --tls-private-key-file=/var/lib/kubernetes/kubernetes-key.pem \
+  --v=2
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/kubelet.service'
+``` 
+
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable kubelet
+sudo systemctl start kubelet
+```
+
+```
+[fedora@ip-10-0-0-181 ~]$ sudo systemctl status kubelet --no-pager
+● kubelet.service - Kubernetes Kubelet
+   Loaded: loaded (/etc/systemd/system/kubelet.service; enabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-08-25 13:05:31 UTC; 48s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 975 (kubelet)
+    Tasks: 10 (limit: 512)
+   CGroup: /system.slice/kubelet.service
+           ├─ 975 /usr/bin/kubelet --allow-privileged=true --api-servers=https://10.0.0.137:6443,https://10.0.0.138:6443 --cloud-provider= --...
+           └─1001 journalctl -k -f
+
+Aug 25 13:05:32 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]:   }
+Aug 25 13:05:32 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: }
+Aug 25 13:05:36 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:05:36.858809     975 kubelet.go:2477] skipping pod syn...IDR]
+Aug 25 13:05:41 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:05:41.859454     975 kubelet.go:2477] skipping pod syn...IDR]
+Aug 25 13:05:46 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:05:46.859945     975 kubelet.go:2477] skipping pod syn...IDR]
+Aug 25 13:05:51 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:05:51.860474     975 kubelet.go:2477] skipping pod syn...IDR]
+Aug 25 13:05:56 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:05:56.860980     975 kubelet.go:2477] skipping pod syn...IDR]
+Aug 25 13:06:01 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:06:01.861473     975 kubelet.go:2477] skipping pod syn...IDR]
+Aug 25 13:06:02 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:06:02.117166     975 kubelet.go:2884] Recording NodeRe...rnal
+Aug 25 13:06:06 ip-10-0-0-181.eu-central-1.compute.internal kubelet[975]: I0825 13:06:06.862013     975 kubelet.go:2534] SyncLoop (ADD, "...: ""
+Hint: Some lines were ellipsized, use -l to show in full.
+[fedora@ip-10-0-0-181 ~]$ 
+```
+
+## kube-proxy
+
+```
+sudo sh -c 'echo "[Unit]
+Description=Kubernetes Kube Proxy
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+[Service]
+ExecStart=/usr/bin/kube-proxy \
+  --master=https://10.0.0.137:6443 \
+  --kubeconfig=/var/lib/kubelet/kubeconfig \
+  --proxy-mode=iptables \
+  --v=2
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/kube-proxy.service'
+```
+
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable kube-proxy
+sudo systemctl start kube-proxy
+```
+
+
+```
+[fedora@ip-10-0-0-181 ~]$ sudo systemctl status kube-proxy --no-pager
+● kube-proxy.service - Kubernetes Kube Proxy
+   Loaded: loaded (/etc/systemd/system/kube-proxy.service; enabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-08-25 13:08:00 UTC; 11s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 1044 (kube-proxy)
+    Tasks: 6 (limit: 512)
+   CGroup: /system.slice/kube-proxy.service
+           └─1044 /usr/bin/kube-proxy --master=https://10.0.0.137:6443 --kubeconfig=/var/lib/kubelet/kubeconfig --proxy-mode=iptables --v=2
+
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal systemd[1]: Started Kubernetes Kube Proxy.
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.178074    1044 server.go:154] setting OOM sc...uild
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.183421    1044 server.go:201] Using iptables...ier.
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.183661    1044 server.go:214] Tearing down u...les.
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.191713    1044 conntrack.go:36] Setting nf_c...2144
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.191876    1044 conntrack.go:41] Setting conn...5536
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.192196    1044 conntrack.go:46] Setting nf_c...6400
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.223367    1044 proxier.go:502] Setting endpo...443]
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.223644    1044 proxier.go:647] Not syncing i...ster
+Aug 25 13:08:00 ip-10-0-0-181.eu-central-1.compute.internal kube-proxy[1044]: I0825 13:08:00.224247    1044 proxier.go:427] Adding new se.../TCP
+Hint: Some lines were ellipsized, use -l to show in full.
+[fedora@ip-10-0-0-181 ~]$ 
+```
+
+**Note:** Make sure that you perform all of above steps on all worker nodes.
+
+
+
+
 
