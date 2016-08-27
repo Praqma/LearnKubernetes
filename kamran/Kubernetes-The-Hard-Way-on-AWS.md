@@ -27,8 +27,10 @@ There are 6 nodes in total for main Kubernetes functionality, with the following
 * worker1 - 52.59.249.129 - 10.0.0.181
 * worker2 - 54.93.34.227 - 10.0.0.182
 
+Note: Kelsey's howto has the IP addresses in the range 10.240.0.* . So if you are following that (or using it as a reference), it is good to know what are the differences between his documentation and ours.
+
 Cluster / Service IPs: 10.32.0.0/24 ( not configured on any interaface of any node). 
-Cluster CIDR (like flannel network) = 10.200.0.0/16 (each node will get a subnet out of this network space to use for containers).
+Cluster CIDR (like flannel network) = 10.200.0.0/16 (each node will get a subnet out of this network space to use for containers). This is same as Kelseys howto.
 
 I will use the same /etc/hosts on all nodes, so I do not have to keep track of the IP addresses in various config files.
 
@@ -937,6 +939,9 @@ bridge  cnitool  dhcp  flannel  host-local  ipvlan  loopback  macvlan  ptp  tuni
 [fedora@ip-10-0-0-181 ~]$ 
 ```
 
+I am not really sure, that how does kubernetes know about the existence of these binaries in /opt/cni/bin ? How does it setup CIDR network? [TODO]
+
+
 ## Download and install the Kubernetes worker binaries:
 
 ```
@@ -1097,7 +1102,169 @@ Hint: Some lines were ellipsized, use -l to show in full.
 [fedora@ip-10-0-0-181 ~]$ 
 ```
 
+## Verify that the nodes are in Ready state:
+Logon to controller1 (or 2), and check the status of nodes:
+
+```
+[fedora@ip-10-0-0-137 ~]$ kubectl get nodes
+NAME                                          STATUS    AGE
+ip-10-0-0-181.eu-central-1.compute.internal   Ready     21h
+ip-10-0-0-182.eu-central-1.compute.internal   Ready     21h
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+
+
 **Note:** Make sure that you perform all of above steps on all worker nodes.
+
+```
+[fedora@ip-10-0-0-181 ~]$ ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc fq_codel state UP group default qlen 1000
+    link/ether 06:c8:b5:6e:b3:71 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.0.181/24 brd 10.0.0.255 scope global dynamic eth0
+       valid_lft 2580sec preferred_lft 2580sec
+    inet6 fe80::4c8:b5ff:fe6e:b371/64 scope link 
+       valid_lft forever preferred_lft forever
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:c6:36:5e:e5 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 scope global docker0
+       valid_lft forever preferred_lft forever
+[fedora@ip-10-0-0-181 ~]$ 
+```
+
+# Configuring the Kubernetes Client - Remote Access
+
+Execute the following on your local work computer.
+
+Linux
+
+```
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubectl
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin
+```
+
+# Configure the kubectl client to point to the Kubernetes API Server Frontend Load Balancer.
+
+**Note:** This is a TODO task. Details below.
+
+The instructions from Kelsey's document asks to point kubectl to the frontend load balancer. However, I did not configure that yet. So I will point kubectl to the pubic IP of the first controller only. 
+
+**Note:** This IP address must be part of the cert you generated earlier.
+
+But the problem is that in the beginning, we created certificates only with the public IP we generated earlier, which was to be assigned to the frontend load balancer. So even if I use the public IP of only one controller node, I would still not be able to use the kubectl from my work computer. This is a dilemma.
+
+I tried to create an AWS load balancer, but i could not create it. It complained about the SSL certificates which I was providing it (which I generated in the begining of this document), and it refused. So I am really stuck here. [TODO]
+
+This load balancer needs to be configured later. This is a TODO task.
+
+
+For now, I can just log in directly on one of the controller nodes and do all the kubectl commands from there. So this is not a show stopper for now.
+
+Another thing which could be done is to port forward port 6443 from the kubernetes controller to my work machine, over SSH. That way I can configure my kubectl to use localhost instead of that public IP. It would still point to only one controller, (as there is no frontend load balancer yet), but I can live with that. 
+
+
+# Managing the Container Network Routes
+
+Now that each worker node is online we need to add routes to make sure that Pods running on different machines can talk to each other. In this setup we are not going to provision any overlay networks (flannel), and instead rely on Layer 3 networking (cni). That means we need to add routes to our AWS router. In AWS each network has a router that can be configured. If this was an on-premesis datacenter then ideally you would need to add the routes to your local router.
+
+In our setup we need to add the following routes to the AWS VPC router:
+
+* Network 10.200.1.0/24 is reachable through 10.0.0.181
+* Network 10.200.1.0/24 is reachable through 10.0.0.182
+
+These are the networks, which will be created for pods' usage.10.0.0.181
+
+
+We will use the following resources to configure our AWS VPC's router.
+
+* [http://docs.aws.amazon.com/AmazonVPC/latest/UserGuide/VPC_Route_Tables.html](http://docs.aws.amazon.com/AmazonVPC/latest/UserGuide/VPC_Route_Tables.html)
+* [http://docs.aws.amazon.com/AmazonVPC/latest/UserGuide/VPC_Route_Tables.html#AddRemoveRoutes](http://docs.aws.amazon.com/AmazonVPC/latest/UserGuide/VPC_Route_Tables.html#AddRemoveRoutes)
+
+
+The trick is to modify the main routing table and then add two routes. Instead of using the target IP address of the worker nodes, you have to use their EC2 instance IDs. 
+
+(Attache screenshot)
+
+# Create DNS addon
+[https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/08-dns-addon.md](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/08-dns-addon.md)
+
+Since kubectl on my local work computer is not setup yet. I will log on to the controller1, and execute the kubectl commands over there.
+
+## Create the skydns service:
+```
+[kamran@kworkhorse ~]$ ssh -i Downloads/Kamran-AWS.pem fedora@controller1
+
+[fedora@ip-10-0-0-137 ~]$ kubectl create -f https://raw.githubusercontent.com/kelseyhightower/kubernetes-the-hard-way/master/skydns-svc.yaml
+service "kube-dns" created
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+```
+[fedora@ip-10-0-0-137 ~]$ kubectl --namespace=kube-system get svc
+NAME       CLUSTER-IP   EXTERNAL-IP   PORT(S)         AGE
+kube-dns   10.32.0.10   <none>        53/UDP,53/TCP   1m
+[fedora@ip-10-0-0-137 ~]$
+```
+
+
+## Create the skydns replication controller:
+
+```
+kubectl create -f https://raw.githubusercontent.com/kelseyhightower/kubernetes-the-hard-way/master/skydns-rc.yaml
+
+[fedora@ip-10-0-0-137 ~]$ kubectl create -f https://raw.githubusercontent.com/kelseyhightower/kubernetes-the-hard-way/master/skydns-rc.yaml
+replicationcontroller "kube-dns-v18" created
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+
+```
+[fedora@ip-10-0-0-137 ~]$ kubectl --namespace=kube-system get pods
+NAME                 READY     STATUS    RESTARTS   AGE
+kube-dns-v18-04c4e   2/3       Running   0          41s
+kube-dns-v18-t4xdi   2/3       Running   0          41s
+[fedora@ip-10-0-0-137 ~]$ 
+```
+
+
+I wonder why it says 2/3 ? Why one of the containers is failing?
+
+Also for some reason, the worker nodes started having the CIDR networks starting from 10.200.0.0/24, instead of 10.200.1.0/24 . Need to figure out how the node decides which network it is going to use. (TODO)
+
+For now I have to change routes on AWS VPC.
+
+So, changing routes on AWS VPC did not help much. The DNS containers remain in failed state, and one of them never comes up:
+
+```
+[fedora@ip-10-0-0-137 ~]$ kubectl get pods  --namespace=kube-system
+NAME                 READY     STATUS             RESTARTS   AGE
+kube-dns-v18-1rwo1   2/3       CrashLoopBackOff   31         1h
+kube-dns-v18-qadgb   2/3       CrashLoopBackOff   31         1h
+[fedora@ip-10-0-0-137 ~]$
+```
+
+```
+[fedora@ip-10-0-0-137 ~]$ kubectl --namespace=kube-system  get events --watch-only=true
+LASTSEEN               FIRSTSEEN              COUNT     NAME                 KIND      SUBOBJECT   TYPE      REASON       SOURCE                                                  MESSAGE
+2016-08-26T12:33:53Z   2016-08-26T12:10:00Z   82        kube-dns-v18-04c4e   Pod                   Warning   FailedSync   {kubelet ip-10-0-0-182.eu-central-1.compute.internal}   Error syncing pod, skipping: failed to "StartContainer" for "kubedns" with CrashLoopBackOff: "Back-off 5m0s restarting failed container=kubedns pod=kube-dns-v18-04c4e_kube-system(0e9849e7-6b84-11e6-ad8b-06763c08460d)"
+
+2016-08-26T12:33:53Z   2016-08-26T12:03:40Z   102       kube-dns-v18-04c4e   Pod       spec.containers{kubedns}   Warning   BackOff   {kubelet ip-10-0-0-182.eu-central-1.compute.internal}   Back-off restarting failed docker container
+2016-08-26T12:33:57Z   2016-08-26T12:10:01Z   83        kube-dns-v18-t4xdi   Pod                 Warning   FailedSync   {kubelet ip-10-0-0-181.eu-central-1.compute.internal}   Error syncing pod, skipping: failed to "StartContainer" for "kubedns" with CrashLoopBackOff: "Back-off 5m0s restarting failed container=kubedns pod=kube-dns-v18-t4xdi_kube-system(0e989b19-6b84-11e6-ad8b-06763c08460d)"
+```
+
+
+I think using CIDR is useless, and using flannel is much more helpful.
+
+So I will convert this setup to flannel.
+
+
 
 
 
