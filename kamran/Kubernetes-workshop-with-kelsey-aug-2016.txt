@@ -1,0 +1,55 @@
+# Kubernetes workshop with Kelsey 
+
+https://github.com/kelseyhightower/craft-kubernetes-workshop
+
+```
+kamranazeem@kubernetes-with-kelsey:~$ gcloud container clusters create k0
+Creating cluster k0...done.
+Created [https://container.googleapis.com/v1/projects/kubernetes-with-kelsey/zones/europe-west1-d/clusters/k0].
+kubeconfig entry generated for k0.
+NAME  ZONE            MASTER_VERSION  MASTER_IP     MACHINE_TYPE   NODE_VERSION  NUM_NODES  STATUS
+k0    europe-west1-d  1.3.5           104.155.6.65  n1-standard-1  1.3.5         3          RUNNING
+kamranazeem@kubernetes-with-kelsey:~$
+```
+
+
+kubectl get pods --v=9 
+
+shows all api calls in curl format.
+
+
+
+readiness and liveliness (liveness) probes should be part of all pod definitions.
+
+
+
+kamranazeem@kubernetes-with-kelsey:~/craft-kubernetes-workshop/kubernetes$ kubectl create -f services/monolith.yaml 
+You have exposed your service on an external port on all nodes in your
+cluster.  If you want to expose this service to the external internet, you may
+need to set up firewall rules for the service port(s) (tcp:31000) to serve traffic.
+See http://releases.k8s.io/release-1.3/docs/user-guide/services-firewalls.md for more details.
+service "monolith" created
+kamranazeem@kubernetes-with-kelsey:~/craft-kubernetes-workshop/kubernetes$ 
+
+
+
+
+kubectl get endpoints give the endpoints of a service. Super helpful in my load balancer.
+
+we can disable kubeproxy !!!! And get rid of all the iptables stuff.
+
+
+kubectl describe limitranges limits is a good place to set defaults for resource usage.
+
+
+
+git kelseyhightower/kube-cert-manager is a way to automatically generate the certs and push it to apps, using letsencrypt.
+
+
+
+
+
+
+
+
+

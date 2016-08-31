@@ -1259,10 +1259,28 @@ LASTSEEN               FIRSTSEEN              COUNT     NAME                 KIN
 2016-08-26T12:33:57Z   2016-08-26T12:10:01Z   83        kube-dns-v18-t4xdi   Pod                 Warning   FailedSync   {kubelet ip-10-0-0-181.eu-central-1.compute.internal}   Error syncing pod, skipping: failed to "StartContainer" for "kubedns" with CrashLoopBackOff: "Back-off 5m0s restarting failed container=kubedns pod=kube-dns-v18-t4xdi_kube-system(0e989b19-6b84-11e6-ad8b-06763c08460d)"
 ```
 
+```
+[fedora@ip-10-0-0-137 ~]$ kubectl get rc --namespace=kube-system
+NAME           DESIRED   CURRENT   AGE
+kube-dns-v18   2         2         4d
+[fedora@ip-10-0-0-137 ~]$
 
-I think using CIDR is useless, and using flannel is much more helpful.
+[fedora@ip-10-0-0-137 ~]$ kubectl get pods --namespace=kube-system
+NAME                 READY     STATUS             RESTARTS   AGE
+kube-dns-v18-1rwo1   2/3       CrashLoopBackOff   1602       4d
+kube-dns-v18-qadgb   2/3       CrashLoopBackOff   1601       4d
 
-So I will convert this setup to flannel.
+
+[fedora@ip-10-0-0-137 ~]$ kubectl logs kube-dns-v18-qadgb -c kubedns --namespace=kube-system
+Error from server: Get https://ip-10-0-0-182.eu-central-1.compute.internal:10250/containerLogs/kube-system/kube-dns-v18-qadgb/kubedns: x509: certificate is valid for etcd1, etcd2, controller1, controller2, worker1, worker2, not ip-10-0-0-182.eu-central-1.compute.internal
+[fedora@ip-10-0-0-137 ~]$
+```
+
+The probem seems to be with the hostname of the nodes. The hostnames of the worker nodes are not simply worker1, and are not in the certificates we generated.
+
+
+Flannel is a simpler solution compare to CIDR. But, Flannel is SDN, and has at least 30% degraded performance compared to CIDR. Even though I am tempted to use flannel here, I will try to make this Kubernetes work with CIDR. It is only this VPC router, which is kind of a challenge to configure.
+
 
 
 
