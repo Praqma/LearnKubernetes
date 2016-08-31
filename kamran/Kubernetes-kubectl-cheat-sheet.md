@@ -9,7 +9,6 @@ $ kubectl create -f ./file.yml                   # create resource(s) in a json 
 $ kubectl create -f ./file1.yml -f ./file2.yaml  # create resource(s) in a json or yaml file
 
 $ kubectl create -f ./dir                        # create resources in all .json, .yml, and .yaml files in dir
-```
 
 # Create from a URL
 
