@@ -104,7 +104,7 @@ kind: ReplicationController
 metadata:
   name: nginx-ingress-rc
   labels:
-    app:nginx-ingress
+    app: nginx-ingress
 spec:
   replicas: 1
   selector:
