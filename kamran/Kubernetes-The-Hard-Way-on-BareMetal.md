@@ -1525,6 +1525,110 @@ Hint: Some lines were ellipsized, use -l to show in full.
 [root@worker2 ~]# 
 ```
 
+
+At this point, you should be able to see the nodes as **Ready**.
+
+```
+[root@controller1 ~]# kubectl get componentstatuses
+NAME                 STATUS    MESSAGE              ERROR
+scheduler            Healthy   ok                   
+controller-manager   Healthy   ok                   
+etcd-0               Healthy   {"health": "true"}   
+etcd-1               Healthy   {"health": "true"}   
+
+
+[root@controller1 ~]# kubectl get nodes
+NAME                  STATUS    AGE
+worker1.example.com   Ready     47s
+worker2.example.com   Ready     41s
+[root@controller1 ~]# 
+```
+
+**Note:** Sometimes the nodes do not show up as Ready in the output of `kubectl get nodes` command. It is ok to reboot the worker nodes. 
+
+
+(to do) Add a step to make sure that the worker nodes have got the CIDR IP address. Right now, in my setup, I do not see CIDR addresses assigned to my worker nodes, even though they show up as Ready . 
+
+```
+[root@worker1 ~]# ifconfig
+docker0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+        inet 172.17.0.1  netmask 255.255.0.0  broadcast 0.0.0.0
+        ether 02:42:4a:68:e4:2f  txqueuelen 0  (Ethernet)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+ens3: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.240.0.31  netmask 255.255.255.0  broadcast 10.240.0.255
+        inet6 fe80::5054:ff:fe03:a650  prefixlen 64  scopeid 0x20<link>
+        ether 52:54:00:03:a6:50  txqueuelen 1000  (Ethernet)
+        RX packets 2028  bytes 649017 (633.8 KiB)
+        RX errors 0  dropped 6  overruns 0  frame 0
+        TX packets 1689  bytes 262384 (256.2 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1  (Local Loopback)
+        RX packets 20  bytes 1592 (1.5 KiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 20  bytes 1592 (1.5 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+[root@worker1 ~]#
+```
+**Note:** Where is the IP address from CIDR?
+
+Here is a hint of the underlying problem:
+```
+[root@worker1 ~]# systemctl status kubelet -l
+● kubelet.service - Kubernetes Kubelet
+   Loaded: loaded (/etc/systemd/system/kubelet.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2016-09-14 13:16:13 CEST; 9min ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 4744 (kubelet)
+    Tasks: 11 (limit: 512)
+   CGroup: /system.slice/kubelet.service
+           ├─4744 /usr/bin/kubelet --allow-privileged=true --api-servers=https://10.240.0.21:6443,https://10.240.0.22:6443 --cloud-provider= --c
+           └─4781 journalctl -k -f
+
+4744 kubelet.go:2510] skipping pod synchronization - [Kubenet does not have netConfig. This is most likely due to lack of PodCIDR]
+4744 kubelet.go:2510] skipping pod synchronization - [Kubenet does not have netConfig. This is most likely due to lack of PodCIDR]
+4744 kubelet.go:2510] skipping pod synchronization - [Kubenet does not have netConfig. This is most likely due to lack of PodCIDR]
+4744 kubelet.go:2924] Recording NodeReady event message for node worker1.example.com
+```
+
+On the controller I see that the kube-controller-manager has some problems:
+
+```
+[root@controller2 ~]# systemctl status kube-controller-manager.service -l
+● kube-controller-manager.service - Kubernetes Controller Manager
+   Loaded: loaded (/etc/systemd/system/kube-controller-manager.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2016-09-14 13:07:10 CEST; 25min ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 550 (kube-controller)
+    Tasks: 5 (limit: 512)
+   CGroup: /system.slice/kube-controller-manager.service
+           └─550 /usr/bin/kube-controller-manager --allocate-node-cidrs=true --cluster-cidr=10.200.0.0/16 --cluster-name=kubernetes --leader-ele
+
+. . .
+13:10:52.772513     550 nodecontroller.go:534] NodeController is entering network segmentation mode.
+13:10:52.772630     550 event.go:216] Event(api.ObjectReference{Kind:"Node", Namespace:"", Name:"worker2.example.com", UID:"worker2.example.
+13:10:57.775051     550 nodecontroller.go:534] NodeController is entering network segmentation mode.
+13:11:02.777334     550 nodecontroller.go:534] NodeController is entering network segmentation mode.
+13:11:07.781592     550 nodecontroller.go:534] NodeController is entering network segmentation mode.
+13:11:12.784489     550 nodecontroller.go:534] NodeController is entering network segmentation mode.
+13:11:17.787018     550 nodecontroller.go:539] NodeController exited network segmentation mode.
+13:17:36.729147     550 request.go:347] Field selector: v1 - serviceaccounts - metadata.name - default: need to check if this is versioned correctly.
+13:25:32.730591     550 request.go:347] Field selector: v1 - serviceaccounts - metadata.name - default: need to check if this is versioned correctly.
+```
+
+
+
+
+
 ------
 # Configuring the Kubernetes Client - Remote Access
 This is step 6 in Kelseys guide.
@@ -1543,7 +1647,9 @@ sudo mv kubectl /usr/local/bin
 
 ------
 
+# Managing the Container Network Routes
 
+Now that each worker node is online we need to add routes to make sure that Pods running on different machines can talk to each other. In this lab we are not going to provision any overlay networks and instead rely on Layer 3 networking. That means we need to add routes to our router. In GCP and AWS each network has a router that can be configured. Ours is a bare metal installation, which means we have to add routes to our local router. Since my setup is a VM based setup on KVM/Libvirt, the router in question here is actually my local work computer. 
 
 
 
