@@ -1203,3 +1203,535 @@ etcd-1               Healthy   {"health": "true"}
 ```
 
 
+
+# Setup Kubernetes frontend load balancer
+
+This is not critical, and can be done later.
+
+(TODO)(To do)
+
+
+# Bootstrapping Kubernetes Workers
+Kubernetes worker nodes are responsible for running your containers. All Kubernetes clusters need one or more worker nodes. We are running the worker nodes on dedicated machines for the following reasons:
+
+* Ease of deployment and configuration
+* Avoid mixing arbitrary workloads with critical cluster components. We are building machine with just enough resources so we don't have to worry about wasting resources.
+
+## Provision the Kubernetes Worker Nodes
+
+Run the following commands on all worker nodes.
+
+Move the TLS certificates in place
+```
+sudo mkdir -p /var/lib/kubernetes
+sudo mv ca.pem kubernetes-key.pem kubernetes.pem /var/lib/kubernetes/
+``` 
+
+## Install Docker
+
+Kubernetes should be compatible with the Docker 1.9.x - 1.11.x:
+
+```
+wget https://get.docker.com/builds/Linux/x86_64/docker-1.11.2.tgz
+
+tar -xf docker-1.11.2.tgz
+
+sudo cp docker/docker* /usr/bin/
+```
+
+Create the Docker systemd unit file:
+```
+sudo sh -c 'echo "[Unit]
+Description=Docker Application Container Engine
+Documentation=http://docs.docker.io
+
+[Service]
+ExecStart=/usr/bin/docker daemon \
+  --iptables=false \
+  --ip-masq=false \
+  --host=unix:///var/run/docker.sock \
+  --log-level=error \
+  --storage-driver=overlay
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/docker.service'
+```
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable docker
+sudo systemctl start docker
+
+sudo docker version
+```
+
+
+```
+[root@worker1 ~]# sudo docker version
+Client:
+ Version:      1.11.2
+ API version:  1.23
+ Go version:   go1.5.4
+ Git commit:   b9f10c9
+ Built:        Wed Jun  1 21:20:08 2016
+ OS/Arch:      linux/amd64
+
+Server:
+ Version:      1.11.2
+ API version:  1.23
+ Go version:   go1.5.4
+ Git commit:   b9f10c9
+ Built:        Wed Jun  1 21:20:08 2016
+ OS/Arch:      linux/amd64
+[root@worker1 ~]# 
+```
+
+## Setup kubelet on worker nodes:
+
+The Kubernetes kubelet no longer relies on docker networking for pods! The Kubelet can now use CNI - the Container Network Interface to manage machine level networking requirements.
+
+Download and install CNI plugins
+
+```
+sudo mkdir -p /opt/cni
+
+wget https://storage.googleapis.com/kubernetes-release/network-plugins/cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz
+
+sudo tar -xvf cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz -C /opt/cni
+```
+**Note:** Kelsey's guide does not mention this, but the kubernetes binaries look for plugin binaries in /opt/plugin-name/bin/, and then in other paths if nothing is found over there.
+
+
+Download and install the Kubernetes worker binaries:
+```
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.6/bin/linux/amd64/kubectl
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.6/bin/linux/amd64/kube-proxy
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.6/bin/linux/amd64/kubelet
+```
+
+```
+chmod +x kubectl kube-proxy kubelet
+
+sudo mv kubectl kube-proxy kubelet /usr/bin/
+
+sudo mkdir -p /var/lib/kubelet/
+```
+
+
+Create kubeconfig file:
+```
+sudo sh -c 'echo "apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority: /var/lib/kubernetes/ca.pem
+    server: https://10.240.0.21:6443
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubelet
+  name: kubelet
+current-context: kubelet
+users:
+- name: kubelet
+  user:
+    token: chAng3m3" > /var/lib/kubelet/kubeconfig'
+```
+**Note:** Notice that `server` is specified as 10.240.0.21, which is the IP address of the first controller. We can use the virtual IP of the controllers (which is 10.240.0.20) , but we have not actually configured a load balancer with this IP address yet. So we are just using the IP address of one of the controller nodes. Remember, Kelsey's guide uses the IP address of 10.240.0.20 , but that is the IP address of controller0 in his guide, not the  VIP of controller nodes.
+
+
+Create the kubelet systemd unit file:
+```
+sudo sh -c 'echo "[Unit]
+Description=Kubernetes Kubelet
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/usr/bin/kubelet \
+  --allow-privileged=true \
+  --api-servers=https://10.240.0.21:6443,https://10.240.0.22:6443 \
+  --cloud-provider= \
+  --cluster-dns=10.32.0.10 \
+  --cluster-domain=cluster.local \
+  --configure-cbr0=true \
+  --container-runtime=docker \
+  --docker=unix:///var/run/docker.sock \
+  --network-plugin=kubenet \
+  --kubeconfig=/var/lib/kubelet/kubeconfig \
+  --reconcile-cidr=true \
+  --serialize-image-pulls=false \
+  --tls-cert-file=/var/lib/kubernetes/kubernetes.pem \
+  --tls-private-key-file=/var/lib/kubernetes/kubernetes-key.pem \
+  --v=2
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/kubelet.service'
+```
+**Note:** Notice `--configure-cbr0=true` , this enables the container bridge, which from the pool 10.200.0.0/16, and can be any of 10.200.x.0/24 network. Also notice that this service requires the docker service to be up before it starts.
+
+
+Start the kubelet service and check that it is running:
+```
+sudo systemctl daemon-reload
+sudo systemctl enable kubelet
+sudo systemctl start kubelet
+
+sudo systemctl status kubelet --no-pager
+```
+
+
+```
+[root@worker1 ~]# sudo systemctl status kubelet --no-pager
+● kubelet.service - Kubernetes Kubelet
+   Loaded: loaded (/etc/systemd/system/kubelet.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2016-09-14 11:38:03 CEST; 1s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 1954 (kubelet)
+    Tasks: 11 (limit: 512)
+   CGroup: /system.slice/kubelet.service
+           ├─1954 /usr/bin/kubelet --allow-privileged=true --api-servers=https://10.240.0.21:6443,https://10.240.0.22:6443 --cloud-provider= ...
+           └─2002 journalctl -k -f
+
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.018143    1954 kubelet.go:1197] Attempting to register node worker1....ple.com
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.019360    1954 kubelet.go:1200] Unable to register worker1.example.c...refused
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.220851    1954 kubelet.go:2924] Recording NodeHasSufficientDisk even...ple.com
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.221101    1954 kubelet.go:2924] Recording NodeHasSufficientMemory ev...ple.com
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.221281    1954 kubelet.go:1197] Attempting to register node worker1....ple.com
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.222266    1954 kubelet.go:1200] Unable to register worker1.example.c...refused
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.623784    1954 kubelet.go:2924] Recording NodeHasSufficientDisk even...ple.com
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.624059    1954 kubelet.go:2924] Recording NodeHasSufficientMemory ev...ple.com
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.624328    1954 kubelet.go:1197] Attempting to register node worker1....ple.com
+Sep 14 11:38:04 worker1.example.com kubelet[1954]: I0914 11:38:04.625329    1954 kubelet.go:1200] Unable to register worker1.example.c...refused
+Hint: Some lines were ellipsized, use -l to show in full.
+[root@worker1 ~]#
+
+
+[root@worker2 ~]# sudo systemctl status kubelet --no-pager
+● kubelet.service - Kubernetes Kubelet
+   Loaded: loaded (/etc/systemd/system/kubelet.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2016-09-14 11:38:08 CEST; 920ms ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 1999 (kubelet)
+    Tasks: 10 (limit: 512)
+   CGroup: /system.slice/kubelet.service
+           ├─1999 /usr/bin/kubelet --allow-privileged=true --api-servers=https://10.240.0.21:6443,https://10.240.0.22:6443 --cloud-provider= ...
+           └─2029 journalctl -k -f
+
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.218332    1999 manager.go:281] Starting recovery of all containers
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.254250    1999 manager.go:286] Recovery completed
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.359776    1999 kubelet.go:2924] Recording NodeHasSufficientDisk even...ple.com
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.359800    1999 kubelet.go:2924] Recording NodeHasSufficientMemory ev...ple.com
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.360031    1999 kubelet.go:1197] Attempting to register node worker2....ple.com
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.363621    1999 kubelet.go:1200] Unable to register worker2.example.c...refused
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.565044    1999 kubelet.go:2924] Recording NodeHasSufficientDisk even...ple.com
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.566188    1999 kubelet.go:2924] Recording NodeHasSufficientMemory ev...ple.com
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.566323    1999 kubelet.go:1197] Attempting to register node worker2....ple.com
+Sep 14 11:38:09 worker2.example.com kubelet[1999]: I0914 11:38:09.568444    1999 kubelet.go:1200] Unable to register worker2.example.c...refused
+Hint: Some lines were ellipsized, use -l to show in full.
+[root@worker2 ~]# 
+```
+
+## kube-proxy
+Kube-proxy sets up IPTables rules on the nodes so containers can find services.
+
+Create systemd unit file for kube-proxy:
+```
+sudo sh -c 'echo "[Unit]
+Description=Kubernetes Kube Proxy
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+[Service]
+ExecStart=/usr/bin/kube-proxy \
+  --master=https://10.240.0.21:6443 \
+  --kubeconfig=/var/lib/kubelet/kubeconfig \
+  --proxy-mode=iptables \
+  --v=2
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/kube-proxy.service'
+```
+**Note:** We have used the IP address of the first controller in the systemd file above. Later, we can change it to use the VIP of the controller nodes.
+
+
+
+
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable kube-proxy
+sudo systemctl start kube-proxy
+
+sudo systemctl status kube-proxy --no-pager
+```
+
+
+```
+[root@worker1 ~]# sudo systemctl status kube-proxy --no-pager
+● kube-proxy.service - Kubernetes Kube Proxy
+   Loaded: loaded (/etc/systemd/system/kube-proxy.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2016-09-14 12:02:35 CEST; 635ms ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 2373 (kube-proxy)
+    Tasks: 4 (limit: 512)
+   CGroup: /system.slice/kube-proxy.service
+           └─2373 /usr/bin/kube-proxy --master=https://10.240.0.21:6443 --kubeconfig=/var/lib/kubelet/kubeconfig --proxy-mode=iptables --v=2
+
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: I0914 12:02:35.508769    2373 server.go:202] Using iptables Proxier.
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: W0914 12:02:35.509552    2373 server.go:416] Failed to retrieve node info: Get ht...efused
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: W0914 12:02:35.509608    2373 proxier.go:227] invalid nodeIP, initialize kube-pro...nodeIP
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: I0914 12:02:35.509618    2373 server.go:214] Tearing down userspace rules.
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: I0914 12:02:35.521907    2373 conntrack.go:40] Setting nf_conntrack_max to 32768
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: I0914 12:02:35.522205    2373 conntrack.go:57] Setting conntrack hashsize to 8192
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: I0914 12:02:35.522521    2373 conntrack.go:62] Setting nf_conntrack_tcp_timeout_e... 86400
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: E0914 12:02:35.523511    2373 event.go:207] Unable to write event: 'Post https://...eping)
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: E0914 12:02:35.523709    2373 reflector.go:205] pkg/proxy/config/api.go:33: Faile...efused
+Sep 14 12:02:35 worker1.example.com kube-proxy[2373]: E0914 12:02:35.523947    2373 reflector.go:205] pkg/proxy/config/api.go:30: Faile...efused
+Hint: Some lines were ellipsized, use -l to show in full.
+[root@worker1 ~]# 
+
+
+[root@worker2 ~]# sudo systemctl status kube-proxy --no-pager
+● kube-proxy.service - Kubernetes Kube Proxy
+   Loaded: loaded (/etc/systemd/system/kube-proxy.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2016-09-14 12:02:46 CEST; 1s ago
+     Docs: https://github.com/GoogleCloudPlatform/kubernetes
+ Main PID: 2385 (kube-proxy)
+    Tasks: 4 (limit: 512)
+   CGroup: /system.slice/kube-proxy.service
+           └─2385 /usr/bin/kube-proxy --master=https://10.240.0.21:6443 --kubeconfig=/var/lib/kubelet/kubeconfig --proxy-mode=iptables --v=2
+
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: W0914 12:02:46.660676    2385 proxier.go:227] invalid nodeIP, initialize kube-pro...nodeIP
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: I0914 12:02:46.660690    2385 server.go:214] Tearing down userspace rules.
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: I0914 12:02:46.670904    2385 conntrack.go:40] Setting nf_conntrack_max to 32768
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: I0914 12:02:46.671630    2385 conntrack.go:57] Setting conntrack hashsize to 8192
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: I0914 12:02:46.671687    2385 conntrack.go:62] Setting nf_conntrack_tcp_timeout_e... 86400
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: E0914 12:02:46.673067    2385 event.go:207] Unable to write event: 'Post https://...eping)
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: E0914 12:02:46.673266    2385 reflector.go:205] pkg/proxy/config/api.go:33: Faile...efused
+Sep 14 12:02:46 worker2.example.com kube-proxy[2385]: E0914 12:02:46.673514    2385 reflector.go:205] pkg/proxy/config/api.go:30: Faile...efused
+Sep 14 12:02:47 worker2.example.com kube-proxy[2385]: E0914 12:02:47.674206    2385 reflector.go:205] pkg/proxy/config/api.go:33: Faile...efused
+Sep 14 12:02:47 worker2.example.com kube-proxy[2385]: E0914 12:02:47.674254    2385 reflector.go:205] pkg/proxy/config/api.go:30: Faile...efused
+Hint: Some lines were ellipsized, use -l to show in full.
+[root@worker2 ~]# 
+```
+
+------
+# Configuring the Kubernetes Client - Remote Access
+This is step 6 in Kelseys guide.
+
+This step is not entirely necessary, as we can just login directly on one of the controller nodes, and can still manage the cluster. 
+
+This is a (To do)
+
+## Download and Install kubectl on your local work computer
+Linux
+```
+wget https://storage.googleapis.com/kubernetes-release/release/v1.3.6/bin/linux/amd64/kubectl
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin
+``` 
+
+------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+------
+# Appendix A - DNS  
+
+I used KVM/Libvirt to create my VMs for this lab. Libvirt uses DNSMASQ, which uses /etc/hosts for DNS records, and forwards them to upstream DNS server if the host/ IP address is not found in /etc/hosts on the virtualization server. It is important that the hostnames are resolved to correct IP addresses. I noticed that even though I had the correct IP address / hosts mapping in /etc/hosts in my physical server (KVM host),the names of the hosts were not resolving correctly from the VMs.
+
+First, here is the `/etc/hosts` file from my physical server:
+
+```
+[root@kworkhorse ~]# cat /etc/hosts
+127.0.0.1		localhost.localdomain localhost
+10.240.0.11	etcd1.example.com	etcd1
+10.240.0.12	etcd2.example.com	etcd2
+10.240.0.21	controller1.example.com	controller1
+10.240.0.22	controller2.example.com	controller2
+10.240.0.31	worker1.example.com	worker1
+10.240.0.32	worker2.example.com	worker2
+```
+
+
+When I tried to resolve the names from a VM, it did not work:
+
+```
+ [root@worker1 ~]# dig worker1.example.com
+
+ ;; QUESTION SECTION:
+ ;worker1.example.com.		IN	A
+
+ ;; ANSWER SECTION:
+ worker1.example.com.	0	IN	A	52.59.239.224
+
+ ;; Query time: 0 msec
+ ;; SERVER: 10.240.0.1#53(10.240.0.1)
+ ;; WHEN: Wed Sep 14 11:40:14 CEST 2016
+ ;; MSG SIZE  rcvd: 64
+
+ [root@worker1 ~]#
+```
+
+
+This means I should restart the dnsmasq service on the physical server:
+
+```
+[root@kworkhorse ~]# service dnsmasq stop
+Redirecting to /bin/systemctl stop  dnsmasq.service
+[root@kworkhorse ~]#
+```
+
+Then I start it again:
+```
+[root@kworkhorse ~]# service dnsmasq start
+Redirecting to /bin/systemctl start  dnsmasq.service
+[root@kworkhorse ~]# 
+```
+
+But it failed to start:
+```
+[root@kworkhorse ~]# service dnsmasq status
+Redirecting to /bin/systemctl status  dnsmasq.service
+● dnsmasq.service - DNS caching server.
+   Loaded: loaded (/usr/lib/systemd/system/dnsmasq.service; disabled; vendor preset: disabled)
+   Active: failed (Result: exit-code) since Wed 2016-09-14 11:43:12 CEST; 5s ago
+  Process: 10029 ExecStart=/usr/sbin/dnsmasq -k (code=exited, status=2)
+ Main PID: 10029 (code=exited, status=2)
+
+Sep 14 11:43:12 kworkhorse systemd[1]: Started DNS caching server..
+Sep 14 11:43:12 kworkhorse systemd[1]: Starting DNS caching server....
+Sep 14 11:43:12 kworkhorse dnsmasq[10029]: dnsmasq: failed to create listening socket for port 53: Address already in use
+Sep 14 11:43:12 kworkhorse dnsmasq[10029]: failed to create listening socket for port 53: Address already in use
+Sep 14 11:43:12 kworkhorse dnsmasq[10029]: FAILED to start up
+Sep 14 11:43:12 kworkhorse systemd[1]: dnsmasq.service: Main process exited, code=exited, status=2/INVALIDARGUMENT
+Sep 14 11:43:12 kworkhorse systemd[1]: dnsmasq.service: Unit entered failed state.
+Sep 14 11:43:12 kworkhorse systemd[1]: dnsmasq.service: Failed with result 'exit-code'.
+[root@kworkhorse ~]# 
+```
+
+This is because all the DNSMASQ processes did not exit.
+```
+[root@kworkhorse ~]# netstat -ntlp 
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+tcp        0      0 127.0.0.1:43873         0.0.0.0:*               LISTEN      3573/chrome         
+tcp        0      0 127.0.0.1:56133         0.0.0.0:*               LISTEN      24333/GoogleTalkPlu 
+tcp        0      0 127.0.0.1:5900          0.0.0.0:*               LISTEN      8379/qemu-system-x8 
+tcp        0      0 127.0.0.1:5901          0.0.0.0:*               LISTEN      9990/qemu-system-x8 
+tcp        0      0 127.0.0.1:5902          0.0.0.0:*               LISTEN      11664/qemu-system-x 
+tcp        0      0 127.0.0.1:5903          0.0.0.0:*               LISTEN      13021/qemu-system-x 
+tcp        0      0 127.0.0.1:5904          0.0.0.0:*               LISTEN      14446/qemu-system-x 
+tcp        0      0 127.0.0.1:5905          0.0.0.0:*               LISTEN      15613/qemu-system-x 
+tcp        0      0 127.0.0.1:5939          0.0.0.0:*               LISTEN      1265/teamviewerd    
+tcp        0      0 127.0.0.1:60117         0.0.0.0:*               LISTEN      24333/GoogleTalkPlu 
+tcp        0      0 10.240.0.1:53           0.0.0.0:*               LISTEN      6410/dnsmasq        
+tcp        0      0 172.16.0.1:53           0.0.0.0:*               LISTEN      1543/dnsmasq        
+tcp        0      0 192.168.124.1:53        0.0.0.0:*               LISTEN      1442/dnsmasq        
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      1240/sshd           
+tcp        0      0 127.0.0.1:631           0.0.0.0:*               LISTEN      2479/cupsd          
+tcp6       0      0 :::22                   :::*                    LISTEN      1240/sshd           
+tcp6       0      0 ::1:631                 :::*                    LISTEN      2479/cupsd          
+[root@kworkhorse ~]#
+```
+
+
+So I just `killall` all the dnsmasq processes on the physical server, and started the service again. Which resulted in correct name resolution on the nodes:
+
+```
+[root@kworkhorse ~]# killall dnsmasq
+[root@kworkhorse ~]#
+```
+
+
+```
+[root@kworkhorse ~]# service dnsmasq start
+Redirecting to /bin/systemctl start  dnsmasq.service
+```
+
+```
+[root@kworkhorse ~]# service dnsmasq status
+Redirecting to /bin/systemctl status  dnsmasq.service
+● dnsmasq.service - DNS caching server.
+   Loaded: loaded (/usr/lib/systemd/system/dnsmasq.service; disabled; vendor preset: disabled)
+   Active: active (running) since Wed 2016-09-14 11:43:50 CEST; 2s ago
+ Main PID: 10765 (dnsmasq)
+   Memory: 600.0K
+      CPU: 3ms
+   CGroup: /system.slice/dnsmasq.service
+           └─10765 /usr/sbin/dnsmasq -k
+
+Sep 14 11:43:50 kworkhorse systemd[1]: Started DNS caching server..
+Sep 14 11:43:50 kworkhorse systemd[1]: Starting DNS caching server....
+Sep 14 11:43:50 kworkhorse dnsmasq[10765]: started, version 2.76 cachesize 150
+Sep 14 11:43:50 kworkhorse dnsmasq[10765]: compile time options: IPv6 GNU-getopt DBus no-i18n IDN DHCP DHCPv6 no-Lua TFTP no-conntrac... inotify
+Sep 14 11:43:50 kworkhorse dnsmasq[10765]: reading /etc/resolv.conf
+Sep 14 11:43:50 kworkhorse dnsmasq[10765]: using nameserver 192.168.100.1#53
+Sep 14 11:43:50 kworkhorse dnsmasq[10765]: using nameserver fe80::1%wlp2s0#53
+Sep 14 11:43:50 kworkhorse dnsmasq[10765]: read /etc/hosts - 10 addresses
+Hint: Some lines were ellipsized, use -l to show in full.
+[root@kworkhorse ~]# 
+```
+
+
+Correct name resolution from the VM:
+```
+[root@worker1 ~]# dig worker1.example.com
+
+ ;; QUESTION SECTION:
+ ;worker1.example.com.		IN	A
+
+ ;; ANSWER SECTION:
+ worker1.example.com.	0	IN	A	10.240.0.31
+
+ ;; Query time: 3 msec
+ ;; SERVER: 10.240.0.1#53(10.240.0.1)
+ ;; WHEN: Wed Sep 14 11:56:12 CEST 2016
+ ;; MSG SIZE  rcvd: 64
+
+ [root@worker1 ~]#
+``` 
+
+
+
