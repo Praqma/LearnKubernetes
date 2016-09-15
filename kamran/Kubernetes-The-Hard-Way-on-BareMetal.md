@@ -1976,20 +1976,88 @@ Ok, so we know what to do!
 [root@controller1 ~]# 
 ```
 
+We also need the network address of the worker node:
 ```
-[root@controller1 ~]# for node in $NODE_LIST; do echo ${node}; kubectl describe node ${node} | grep PodCIDR| tr -d '[[:space:]]' | cut -d ':' -f2; echo "------------------"; done
-worker1.example.com
-10.200.0.0/24
-------------------
-worker2.example.com
-10.200.1.0/24
-------------------
+[root@controller1 ~]# kubectl describe node worker1.example.com | grep Addresses| tr -d '[[:space:]]' | cut -d ':' -f 2 | cut -d ',' -f 1
+10.240.0.31
 [root@controller1 ~]# 
-
 ```
 
 
 
+```
+[root@controller1 ~]# for node in $NODE_LIST; do echo ${node}; echo -n "Network: " ; kubectl describe node ${node} | grep PodCIDR| tr -d '[[:space:]]' | cut -d ':' -f2; echo -n "Reachable through: "; kubectl describe node ${node} | grep Addresses| tr -d '[[:space:]]' | cut -d ':' -f 2 | cut -d ',' -f 1; echo "--------------------------------"; done
+worker1.example.com
+Network: 10.200.0.0/24
+Reachable through: 10.240.0.31
+--------------------------------
+worker2.example.com
+Network: 10.200.1.0/24
+Reachable through: 10.240.0.32
+--------------------------------
+[root@controller1 ~]# 
+```
+
+
+We can use this information to add routes to our network router, which is my work computer in our case.
+
+```
+[root@kworkhorse ~]# route add -net 10.200.0.0 netmask 255.255.255.0 gw 10.240.0.31 
+[root@kworkhorse ~]# route add -net 10.200.1.0 netmask 255.255.255.0 gw 10.240.0.32 
+```
+
+
+Here is how my routing table looks like on my work computer:
+```
+[root@kworkhorse ~]# route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         192.168.100.1   0.0.0.0         UG    600    0        0 wlp2s0
+10.200.0.0      10.240.0.31     255.255.255.0   UG    0      0        0 virbr2
+10.200.1.0      10.240.0.32     255.255.255.0   UG    0      0        0 virbr2
+10.240.0.0      0.0.0.0         255.255.255.0   U     0      0        0 virbr2
+172.16.0.0      0.0.0.0         255.255.0.0     U     0      0        0 virbr3
+172.17.0.0      0.0.0.0         255.255.0.0     U     0      0        0 docker0
+172.18.0.0      0.0.0.0         255.255.0.0     U     0      0        0 br-8b79f8723f87
+192.168.100.0   0.0.0.0         255.255.255.0   U     600    0        0 wlp2s0
+192.168.124.0   0.0.0.0         255.255.255.0   U     0      0        0 virbr0
+[root@kworkhorse ~]# 
+```
+
+## Moment of truth!
+Now one pod should be able to ping the other pod running on the other worker node:
+```
+[root@controller1 ~]# kubectl exec centos-multitool-3822887632-6qbrh -it -- bash 
+
+[root@centos-multitool-3822887632-6qbrh /]# ping -c 1 10.200.1.1 
+PING 10.200.1.1 (10.200.1.1) 56(84) bytes of data.
+64 bytes from 10.200.1.1: icmp_seq=1 ttl=64 time=0.268 ms
+
+--- 10.200.1.1 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.268/0.268/0.268/0.000 ms
+
+
+[root@centos-multitool-3822887632-6qbrh /]# ping -c 1 10.200.0.1 
+PING 10.200.0.1 (10.200.0.1) 56(84) bytes of data.
+64 bytes from 10.200.0.1: icmp_seq=1 ttl=62 time=4.57 ms
+
+--- 10.200.0.1 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 4.570/4.570/4.570/0.000 ms
+
+
+[root@centos-multitool-3822887632-6qbrh /]# ping -c 1 10.200.0.2 
+PING 10.200.0.2 (10.200.0.2) 56(84) bytes of data.
+64 bytes from 10.200.0.2: icmp_seq=1 ttl=61 time=0.586 ms
+
+--- 10.200.0.2 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.586/0.586/0.586/0.000 ms
+[root@centos-multitool-3822887632-6qbrh /]# 
+```
+
+Great! It works!
 
 
 
