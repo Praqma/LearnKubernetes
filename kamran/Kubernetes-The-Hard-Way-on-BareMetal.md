@@ -1853,7 +1853,7 @@ PING 10.200.0.2 (10.200.0.2) 56(84) bytes of data.
 [root@centos-multitool-3822887632-6qbrh /]# 
 ```
 
-
+We will setup routing in the coming steps.
 
 ------
 # Configuring the Kubernetes Client - Remote Access
@@ -1877,6 +1877,116 @@ sudo mv kubectl /usr/local/bin
 
 Now that each worker node is online we need to add routes to make sure that Pods running on different machines can talk to each other. In this lab we are not going to provision any overlay networks and instead rely on Layer 3 networking. That means we need to add routes to our router. In GCP and AWS each network has a router that can be configured. Ours is a bare metal installation, which means we have to add routes to our local router. Since my setup is a VM based setup on KVM/Libvirt, the router in question here is actually my local work computer. 
 
+So, we know from experience above (during worker node setup), that the cbr0 on a worker node does not get an IP address until first pod is scheduled on it. This means we are not sure which node will get which network segment (10.200.x.0/24) from the main CIDR network (10.200.0.0/16) . That means, either we do it manually, or we can create a script which does this investigation for us; and (ideally) updates router accordingly. 
+
+Basically this information is available from the output of `kubectl describe node <nodename>` command. (If it was not, I would have to ssh into each worker node and try to see what IP address is assigned to cbr0 interface!) .
+
+```
+[root@controller1 ~]# kubectl get nodes
+NAME                  STATUS    AGE
+worker1.example.com   Ready     23h
+worker2.example.com   Ready     23h
+```
+
+```
+[root@controller1 ~]# kubectl describe node worker1
+Name:			worker1.example.com
+Labels:			beta.kubernetes.io/arch=amd64
+			beta.kubernetes.io/os=linux
+			kubernetes.io/hostname=worker1.example.com
+Taints:			<none>
+CreationTimestamp:	Wed, 14 Sep 2016 13:10:44 +0200
+Phase:			
+Conditions:
+  Type			Status	LastHeartbeatTime			LastTransitionTime			Reason				Message
+  ----			------	-----------------			------------------			------				-------
+  OutOfDisk 		False 	Thu, 15 Sep 2016 12:55:18 +0200 	Thu, 15 Sep 2016 08:53:55 +0200 	KubeletHasSufficientDisk 	kubelet has sufficient disk space available
+  MemoryPressure 	False 	Thu, 15 Sep 2016 12:55:18 +0200 	Wed, 14 Sep 2016 13:10:43 +0200 	KubeletHasSufficientMemory 	kubelet has sufficient memory available
+  Ready 		True 	Thu, 15 Sep 2016 12:55:18 +0200 	Thu, 15 Sep 2016 08:59:17 +0200 	KubeletReady 			kubelet is posting ready status
+Addresses:		10.240.0.31,10.240.0.31
+Capacity:
+ alpha.kubernetes.io/nvidia-gpu:	0
+ cpu:					1
+ memory:				1532864Ki
+ pods:					110
+Allocatable:
+ alpha.kubernetes.io/nvidia-gpu:	0
+ cpu:					1
+ memory:				1532864Ki
+ pods:					110
+System Info:
+ Machine ID:			87ac0ddf52aa40dcb138117283c65a10
+ System UUID:			0947489A-D2E7-416F-AA1A-517900E2DCB5
+ Boot ID:			dbc1ab43-183d-475a-886c-d445fa7b41b4
+ Kernel Version:		4.6.7-300.fc24.x86_64
+ OS Image:			Fedora 24 (Twenty Four)
+ Operating System:		linux
+ Architecture:			amd64
+ Container Runtime Version:	docker://1.11.2
+ Kubelet Version:		v1.3.6
+ Kube-Proxy Version:		v1.3.6
+PodCIDR:			10.200.0.0/24
+ExternalID:			worker1.example.com
+Non-terminated Pods:		(1 in total)
+  Namespace			Name						CPU Requests	CPU Limits	Memory Requests	Memory Limits
+  ---------			----						------------	----------	---------------	-------------
+  default			centos-multitool-3822887632-jeyhb		0 (0%)		0 (0%)		0 (0%)		0 (0%)
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted. More info: http://releases.k8s.io/HEAD/docs/user-guide/compute-resources.md)
+  CPU Requests	CPU Limits	Memory Requests	Memory Limits
+  ------------	----------	---------------	-------------
+  0 (0%)	0 (0%)		0 (0%)		0 (0%)
+No events.
+[root@controller1 ~]#
+``` 
+
+Extract the PodCIDR information from the output above:
+```
+[root@controller1 ~]# kubectl describe node worker1 | grep PodCIDR
+PodCIDR:			10.200.0.0/24
+[root@controller1 ~]# 
+```
+
+
+We also know this:
+```
+[root@controller1 ~]# kubectl get nodes -o name
+node/worker1.example.com
+node/worker2.example.com
+[root@controller1 ~]# 
+```
+
+
+```
+[root@controller1 ~]# kubectl get nodes -o name | sed 's/^.*\///'
+worker1.example.com
+worker2.example.com
+[root@controller1 ~]#
+```
+
+Ok, so we know what to do!
+
+```
+[root@controller1 ~]# NODE_LIST=$(kubectl get nodes -o name | sed 's/^.*\///')
+
+[root@controller1 ~]# for node in $NODE_LIST; do echo ${node}; kubectl describe node ${node} | grep PodCIDR; echo "------------------"; done
+
+[root@controller1 ~]# kubectl describe node worker1.example.com | grep PodCIDR| tr -d '[[:space:]]' | cut -d ':' -f2
+10.200.0.0/24
+[root@controller1 ~]# 
+```
+
+```
+[root@controller1 ~]# for node in $NODE_LIST; do echo ${node}; kubectl describe node ${node} | grep PodCIDR| tr -d '[[:space:]]' | cut -d ':' -f2; echo "------------------"; done
+worker1.example.com
+10.200.0.0/24
+------------------
+worker2.example.com
+10.200.1.0/24
+------------------
+[root@controller1 ~]# 
+
+```
 
 
 
