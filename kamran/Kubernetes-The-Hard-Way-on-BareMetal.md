@@ -1581,7 +1581,7 @@ lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
 ```
 **Note:** Where is the IP address from CIDR?
 
-Here is a hint of the underlying problem:
+Here is a hint of the underlying problem (which, actually is not a problem):
 ```
 [root@worker1 ~]# systemctl status kubelet -l
 ● kubelet.service - Kubernetes Kubelet
@@ -1600,7 +1600,7 @@ Here is a hint of the underlying problem:
 4744 kubelet.go:2924] Recording NodeReady event message for node worker1.example.com
 ```
 
-On the controller I see that the kube-controller-manager has some problems:
+On the controller I see that the kube-controller-manager has some details:
 
 ```
 [root@controller2 ~]# systemctl status kube-controller-manager.service -l
@@ -1626,6 +1626,232 @@ On the controller I see that the kube-controller-manager has some problems:
 ```
 
 
+Also look at this issue: [https://github.com/kelseyhightower/kubernetes-the-hard-way/issues/58](https://github.com/kelseyhightower/kubernetes-the-hard-way/issues/58)
+
+
+**Note:** The above issue explains/shows that the cbr0 network only gets created on pods when firt pod is created and is placed on the worker node. This also means that we cannot update routing table on our router until we know which network exists on which node?!
+
+
+This means, at this point, we shall create a test pod, and see if worker node gets a cbr0 IP address . We will also use this information at a later step, when we add routes to the routing table on our router.
+
+------
+
+
+# Create a test pod:
+
+Login to controller1 and run a test pod. Many people like to run nginx, which runs the ngin webserver, but does not have any tools for network troubleshooting. There is a centos based multitool I created, which runs apache and has many network troubleshooting tools built into it. It is available at dockerhub kamranazeem/centos-multitool . 
+
+```
+[root@controller1 ~]# kubectl run centos-multitool --image=kamranazeem/centos-multitool
+deployment "centos-multitool" created
+[root@controller1 ~]# 
+
+
+
+[root@controller1 ~]# kubectl get pods -o wide
+NAME                                READY     STATUS    RESTARTS   AGE       IP           NODE
+centos-multitool-3822887632-6qbrh   1/1       Running   0          6m        10.200.1.2   worker2.example.com
+[root@controller1 ~]# 
+```
+
+Check if the node got a cbr0 IP belonging to 10.200.x.0/24 , which in-turn will be a subnet of 10.200.0.0/16 .
+
+```
+[root@worker2 ~]# ifconfig
+cbr0: flags=4419<UP,BROADCAST,RUNNING,PROMISC,MULTICAST>  mtu 1500
+        inet 10.200.1.1  netmask 255.255.255.0  broadcast 0.0.0.0
+        inet6 fe80::2c94:fff:fe9d:9cf6  prefixlen 64  scopeid 0x20<link>
+        ether 16:89:74:67:7b:33  txqueuelen 1000  (Ethernet)
+        RX packets 8  bytes 536 (536.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 10  bytes 732 (732.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+docker0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+        inet 172.17.0.1  netmask 255.255.0.0  broadcast 0.0.0.0
+        ether 02:42:bb:60:8d:d0  txqueuelen 0  (Ethernet)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+ens3: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.240.0.32  netmask 255.255.255.0  broadcast 10.240.0.255
+        inet6 fe80::5054:ff:fe4c:f48a  prefixlen 64  scopeid 0x20<link>
+        ether 52:54:00:4c:f4:8a  txqueuelen 1000  (Ethernet)
+        RX packets 44371  bytes 132559205 (126.4 MiB)
+        RX errors 0  dropped 6  overruns 0  frame 0
+        TX packets 37129  bytes 3515567 (3.3 MiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1  (Local Loopback)
+        RX packets 20  bytes 1592 (1.5 KiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 20  bytes 1592 (1.5 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+veth5a59821e: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet6 fe80::1489:74ff:fe67:7b33  prefixlen 64  scopeid 0x20<link>
+        ether 16:89:74:67:7b:33  txqueuelen 0  (Ethernet)
+        RX packets 8  bytes 648 (648.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 17  bytes 1290 (1.2 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+[root@worker2 ~]# 
+```
+
+Good!
+
+Lets increase the number of replicas of this pod to two, which is the same as number of worker nodes. This will hopefully distribute the pods evenly on all workers.
+
+```
+[root@controller1 ~]# kubectl scale deployment centos-multitool --replicas=2
+deployment "centos-multitool" scaled
+[root@controller1 ~]#
+```
+
+Check the pods and the nodes they are put on:
+
+```
+[root@controller1 ~]# kubectl get pods -o wide
+NAME                                READY     STATUS    RESTARTS   AGE       IP           NODE
+centos-multitool-3822887632-6qbrh   1/1       Running   0          16m       10.200.1.2   worker2.example.com
+centos-multitool-3822887632-jeyhb   1/1       Running   0          9m        10.200.0.2   worker1.example.com
+[root@controller1 ~]# 
+```
+
+Check the cbr0 interface on worker1 too:
+```
+[root@worker1 ~]# ifconfig
+cbr0: flags=4419<UP,BROADCAST,RUNNING,PROMISC,MULTICAST>  mtu 1500
+        inet 10.200.0.1  netmask 255.255.255.0  broadcast 0.0.0.0
+        inet6 fe80::6cb1:ddff:fe78:4d2f  prefixlen 64  scopeid 0x20<link>
+        ether 0a:79:9f:11:20:22  txqueuelen 1000  (Ethernet)
+        RX packets 8  bytes 536 (536.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 10  bytes 732 (732.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+docker0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+        inet 172.17.0.1  netmask 255.255.0.0  broadcast 0.0.0.0
+        ether 02:42:fc:7a:23:24  txqueuelen 0  (Ethernet)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+ens3: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.240.0.31  netmask 255.255.255.0  broadcast 10.240.0.255
+        inet6 fe80::5054:ff:fe03:a650  prefixlen 64  scopeid 0x20<link>
+        ether 52:54:00:03:a6:50  txqueuelen 1000  (Ethernet)
+        RX packets 32880  bytes 114219841 (108.9 MiB)
+        RX errors 0  dropped 5  overruns 0  frame 0
+        TX packets 28126  bytes 2708515 (2.5 MiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1  (Local Loopback)
+        RX packets 18  bytes 1492 (1.4 KiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 18  bytes 1492 (1.4 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+veth06329870: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet6 fe80::879:9fff:fe11:2022  prefixlen 64  scopeid 0x20<link>
+        ether 0a:79:9f:11:20:22  txqueuelen 0  (Ethernet)
+        RX packets 8  bytes 648 (648.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 17  bytes 1290 (1.2 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+[root@worker1 ~]#
+```
+
+Good! Lets find the IP addresses of the pods:
+
+```
+[root@controller1 ~]# kubectl exec centos-multitool-3822887632-6qbrh ifconfig
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.200.1.2  netmask 255.255.255.0  broadcast 0.0.0.0
+        inet6 fe80::acbc:28ff:feae:3397  prefixlen 64  scopeid 0x20<link>
+        ether 0a:58:0a:c8:01:02  txqueuelen 0  (Ethernet)
+        RX packets 17  bytes 1290 (1.2 KiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 8  bytes 648 (648.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1  (Local Loopback)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+[root@controller1 ~]#
+```
+
+```
+[root@controller1 ~]# kubectl exec centos-multitool-3822887632-jeyhb ifconfig
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.200.0.2  netmask 255.255.255.0  broadcast 0.0.0.0
+        inet6 fe80::442d:6eff:fe18:f7e0  prefixlen 64  scopeid 0x20<link>
+        ether 0a:58:0a:c8:00:02  txqueuelen 0  (Ethernet)
+        RX packets 17  bytes 1290 (1.2 KiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 8  bytes 648 (648.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1  (Local Loopback)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+[root@controller1 ~]#
+```
+
+
+At this point, the pods will not be able to ping the pods on other nodes. It is because the routing is not setup on the router this cluster is connected to.
+
+``` 
+[root@controller1 ~]# kubectl exec centos-multitool-3822887632-6qbrh -it -- bash 
+[root@centos-multitool-3822887632-6qbrh /]#
+
+[root@centos-multitool-3822887632-6qbrh /]# ping -c 1 10.200.1.1 
+PING 10.200.1.1 (10.200.1.1) 56(84) bytes of data.
+64 bytes from 10.200.1.1: icmp_seq=1 ttl=64 time=0.062 ms
+
+--- 10.200.1.1 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.062/0.062/0.062/0.000 ms
+
+
+[root@centos-multitool-3822887632-6qbrh /]# ping -c 1 10.200.0.1 
+PING 10.200.0.1 (10.200.0.1) 56(84) bytes of data.
+^C
+--- 10.200.0.1 ping statistics ---
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+
+
+[root@centos-multitool-3822887632-6qbrh /]# ping -c 1 10.200.0.2 
+PING 10.200.0.2 (10.200.0.2) 56(84) bytes of data.
+^C
+--- 10.200.0.2 ping statistics ---
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+
+[root@centos-multitool-3822887632-6qbrh /]# 
+```
 
 
 
