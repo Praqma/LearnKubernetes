@@ -2521,7 +2521,7 @@ Next, we need to copy the loadbalancer.conf to /opt/ .
 
 And copy loadbalancer.sh to /usr/local/bin/ :
 ```
-[root@lb LoadBalancer-Files]# cp loadbalancer.sh /usr/local/bin/loadbalancer.sh
+[root@lb LoadBalancer-Files]# cp loadbalancer.sh.cidr /usr/local/bin/loadbalancer.sh
 ```
 
 
