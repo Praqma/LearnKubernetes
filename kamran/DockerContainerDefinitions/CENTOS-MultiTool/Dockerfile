@@ -21,6 +21,8 @@ RUN yum -y install bind-utils net-tools nmap tcpdump telnet httpd && yum clean a
 # in a multitool is like having yet another tool. Now you can do simple connectivity tests to the webserver too!
 # Personally, I think this is cool!
 
+# Copy a simple index.html , to eliminate text noise, when you curl the container on port 80.
+COPY index.html /var/www/html
 
 # CMD ["executable","param1","param2"]
 CMD ["apachectl", "-D", "FOREGROUND"]
