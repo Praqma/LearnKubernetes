@@ -13,7 +13,7 @@ We now run the following, to add the service to the loadbalancer.
 ```
 source setHttpdConf.sh > httpd-loadbalancer.conf
 sudo cp httpd-loadbalancer.conf /etc/httpd/conf.d/
-sudo service httpd restart
+sudo service httpd reload
 ```
 
 Now go to http://localhost/balancer-manager and you can see the nodes and loadbalancer status.
