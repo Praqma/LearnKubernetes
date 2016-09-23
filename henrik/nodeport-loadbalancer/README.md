@@ -20,3 +20,6 @@ Now go to http://localhost/balancer-manager and you can see the nodes and loadba
 I you have more services/Deployments, you can run the script again, and it will add it to Apache.
 
 ![ApacheLoadbalancerManager](images/apache-loadbalancer.png)
+
+Now we can see that the path to each service, is its own service name in the cluster.
+Eg. localhost/my-apache
