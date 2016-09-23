@@ -17,7 +17,7 @@ sudo service httpd reload
 ```
 
 Now go to http://localhost/balancer-manager and you can see the nodes and loadbalancer status.
-I you have more services/Deployments, you can run the script again, and it will add it to Apache.
+If you have more services/Deployments, you can run the script again, and it will add it to Apache.
 
 ![ApacheLoadbalancerManager](images/apache-loadbalancer.png)
 
