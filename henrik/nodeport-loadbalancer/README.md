@@ -1,6 +1,8 @@
 # Kubernetes loadbalancer using NodePort
 ## In this example we are creating a Deployment with two pods, and a Service that exposes these on every node on the cluster.
 
+> Remember to turn off SELinux if you are running apache locally
+
 If you run the following command, these will be deployed
 ```
 source start-pods.sh
