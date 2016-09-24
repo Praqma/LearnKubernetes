@@ -25,7 +25,8 @@ echo "
                 # Security technically we arent blocking
                 # anyone but this is the place to make
                 # those changes.
-                Require all granted
+                #Order Allow
+                #Require all granted
                 # In this example all requests are allowed.
 
                 # Load Balancer Settings
@@ -65,7 +66,7 @@ echo "
 
 printf '%s\n' "$Services" | while IFS= read -r line
 do
-  echo "        ProxyPass /$line balancer://$line/
+  echo "        ProxyPass /$line balancer://$line
         ProxyPassReverse /$line balancer://$line"
 done
 
