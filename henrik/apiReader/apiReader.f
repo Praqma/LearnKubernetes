@@ -62,3 +62,44 @@ function getPodIp(){
   local namespace=$1
   echo $(curl -s $url/api/v1/namespaces/$namespace/pods/$podName | jsonValue 'podIP')
 }
+
+function getDeployments(){
+  local namespace=$1
+
+  if [ ! -z "$namespace" ]; then
+    echo $(curl -s $url/apis/extensions/v1beta1/namespaces/$namespace/deployments | grep -A 3 "metadata" |  jsonValue 'name')
+  else
+    echo $(curl -s $url/apis/extensions/v1beta1/deployments | grep -A 3 "metadata" |  jsonValue 'name')
+  fi
+
+}
+
+function getEvents(){
+  local namespace=$1
+
+  if [ ! -z "$namespace" ]; then
+    curl -s $url/api/v1/namespaces/$namespace/events
+  else
+    curl -s $url/api/v1/events
+  fi
+
+}
+
+function getPodEventStream(){
+  local podname=$1
+
+  if [ ! -z "$podname" ]; then
+    curl -s $url/api/v1/watch/pods/$podname
+  else
+    curl -s $url/api/v1/watch/pods
+  fi
+
+}
+
+function getServiceEventStream(){
+    curl -s $url/api/v1/watch/services
+}
+
+function getDeploymentEventStream(){
+    curl $url/apis/extensions/v1beta1/watch/deployments
+}
