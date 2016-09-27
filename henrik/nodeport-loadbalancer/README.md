@@ -1,5 +1,6 @@
 # Kubernetes loadbalancer using NodePort
 ## In this example we are creating a Deployment with two pods, and a Service that exposes these on every node on the cluster.
+This example uses our apiReader to get data from Kubernetes now.
 
 > Remember to turn off SELinux if you are running apache locally
 
