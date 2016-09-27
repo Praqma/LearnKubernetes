@@ -10,7 +10,17 @@ function jsonValue() {
 }
 
 function getNodeIPs(){
-  echo $(curl -s $url/api/v1/nodes | jsonValue 'address')
+  local nodename=$1
+
+  if [ ! -z "$nodename" ]; then
+    echo $(curl -s $url/api/v1/nodes/$nodename | jsonValue 'address')
+  else
+    echo $(curl -s $url/api/v1/nodes | jsonValue 'address')
+  fi
+}
+
+function getNodeNames(){
+    echo $(curl -s $url/api/v1/nodes | jsonValue 'name')
 }
 
 function getServices(){
