@@ -6,7 +6,7 @@ function jsonValue() {
 #
   KEY=$1
   num=$2
-  awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/'$KEY'\042/){print $(i+1)}}}' | tr -d '"' | sed -n ${num}p | sort -u | sed 's@.*/@@' | awk '{$1=$1};1'
+  awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/'$KEY'\042/){print $(i+1)}}}' | tr -d '"' | sed -n ${num}p | sed 's@.*/@@' | awk '{$1=$1};1'
 }
 
 function getNodeIPs(){
@@ -96,18 +96,35 @@ function getEventsAll(){
 }
 
 
+function formatEventStream(){
+  # http://stackoverflow.com/questions/30272651/redirect-curl-to-while-loop
+  while read -r l; do 
+    reason=$(echo "$l" | jq -r '.object.reason')
+    message=$(echo "$l" | jq -r '.object.message')
+  
+    echo "Event ($reason) : $message"
+  done < <(getEventsOnlyNew default)
+
+}
+
 function getEventsOnlyNew(){
   local namespace=$1
-  local resourceVersion=$(curl -s localhost:8001/api/v1/namespaces/default/events | jsonValue 'resourceVersion' 1)
+
+  if [ ! -z "$namespace" ]; then
+    local resourceVersion=$(curl -s $url/api/v1/namespaces/$namespace/events | jsonValue 'resourceVersion' 1)
+  else
+    local resourceVersion=$(curl -s $url/api/v1/events | jsonValue 'resourceVersion' 1)
+  fi
+
   local onlyNew="?resourceVersion=$resourceVersion"
 
   if [ ! -z "$namespace" ]; then
-    curl -s $url/api/v1/watch/namespaces/$namespace/events$onlyNew
+     curl -s -N  $url/api/v1/watch/namespaces/$namespace/events$onlyNew --stderr -
   else
-     curl -s $url/api/v1/watch/events$onlyNew
+    curl -s -N $url/api/v1/watch/events$onlyNew --stderr - 
   fi
-
 }
+
 
 function getPodEventStream(){
   local podname=$1
