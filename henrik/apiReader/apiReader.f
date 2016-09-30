@@ -88,9 +88,9 @@ function getEventsAll(){
   local namespace=$1
 
   if [ ! -z "$namespace" ]; then
-    curl -s $url/api/v1/namespaces/$namespace/events
+    curl -s $url/api/v1/watch/namespaces/$namespace/events
   else
-    curl -s $url/api/v1/events
+    curl -s $url/api/v1/watch/events
   fi
 
 }
@@ -98,12 +98,13 @@ function getEventsAll(){
 
 function formatEventStream(){
   # http://stackoverflow.com/questions/30272651/redirect-curl-to-while-loop
-  while read -r l; do 
+  while read -r l; do
+    resourceVersion=$(echo "$l" | jq -r '.object.metadata.resourceVersion') 
     reason=$(echo "$l" | jq -r '.object.reason')
     message=$(echo "$l" | jq -r '.object.message')
   
-    echo "Event ($reason) : $message"
-  done < <(getEventsOnlyNew default)
+    echo "Event ($resourceVersion) ($reason) : $message"
+  done < <(getEventsOnlyNew)
 
 }
 
@@ -111,9 +112,9 @@ function getEventsOnlyNew(){
   local namespace=$1
 
   if [ ! -z "$namespace" ]; then
-    local resourceVersion=$(curl -s $url/api/v1/namespaces/$namespace/events | jsonValue 'resourceVersion' 1)
+    local resourceVersion=$(curl -s $url/api/v1/namespaces/$namespace/events | jq -r '.metadata.resourceVersion')
   else
-    local resourceVersion=$(curl -s $url/api/v1/events | jsonValue 'resourceVersion' 1)
+    local resourceVersion=$(curl -s $url/api/v1/events | jq -r '.metadata.resourceVersion')
   fi
 
   local onlyNew="?resourceVersion=$resourceVersion"
@@ -125,8 +126,19 @@ function getEventsOnlyNew(){
   fi
 }
 
-
 function getPodEventStream(){
+  local podname=$1
+
+  if [ ! -z "$podname" ]; then
+    curl -s $url/api/v1/watch/pods/$podname
+  else
+    curl -s $url/api/v1/watch/pods
+  fi
+
+}
+
+
+function getPodEventStreamAll(){
   local podname=$1
 
   if [ ! -z "$podname" ]; then
