@@ -34,13 +34,13 @@ function getServices(){
 }
 
 function getServiceNodePorts(){
-  local namespace=$1
-  local service=$2
+  local namespace=$2
+  local service=$1
 
   if [ ! -z "$namespace" ]; then
-    echo $(curl -s $url/api/v1/namespaces/$namespace/services/$service | jsonValue 'nodePort')
+    echo $(curl -s $url/api/v1/namespaces/$namespace/services/$service | jq -r '.spec.ports[].nodePort')
   else
-    echo $(curl -s $url/api/v1/services/$service | jsonValue 'nodePort')
+    echo $(curl -s $url/api/v1/services/ | jq -r '.items[] | select(.metadata.name == "'$service'") | .spec.ports[].nodePort')
   fi
 
 }

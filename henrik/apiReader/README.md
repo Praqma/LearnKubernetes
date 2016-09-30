@@ -25,11 +25,18 @@ Get services in a specific namespace by
 kubernetes my-nginx weavescope-app
 ```
 
-Get the ports a pod/service is bound to on nodes when using NodePort
+Get the ports a pod/service is bound to on nodes when using NodePort from namespace
 ```
-[hoeghh@localhost apiReader]$ getServiceNodePorts default my-nginx
+[hoeghh@localhost apiReader]$ getServiceNodePorts my-nginx default
 32226
 ```
+
+get the port a pod/service is bound to in a node when using NodePort
+```
+[hoeghh@localhost apiReader]$ getServiceNodePorts my-nginx
+32226
+```
+
 
 Get the namespace of which the pod lives by 
 ```
