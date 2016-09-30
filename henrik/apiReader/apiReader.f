@@ -47,9 +47,7 @@ function getServiceNodePorts(){
 
 function getServiceNamespace(){
   local service=$1
-  echo $(curl -s $url/api/v1/services/ | jq -r '.items[] | select(.metadata.name == "my-nginx") | .metadata.namespace')
-#  echo $(curl -s $url/api/v1/services/ | grep -B 1 $service |  jsonValue 'namespace')
-
+  echo $(curl -s $url/api/v1/services/ | jq -r '.items[] | select(.metadata.name == "'$service'") | .metadata.namespace')
 }
 
 function getPods(){
@@ -64,7 +62,7 @@ function getPods(){
 
 function getPodNamespace(){
   local podName=$1
-  echo $(curl -s $url/api/v1/pods | grep -A 3 "$podName" | jsonValue 'namespace')
+  echo $(curl -s $url/api/v1/pods | jq -r '.items[] | select(.metadata.name == "'$podName'") | .metadata.namespace')
 }
 
 function getPodIp(){
