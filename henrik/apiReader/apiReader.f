@@ -20,7 +20,7 @@ function getNodeIPs(){
 }
 
 function getNodeNames(){
-    echo $(curl -s $url/api/v1/nodes | jsonValue 'externalID')
+    echo $(curl -s $url/api/v1/nodes | jq -r '.items[].spec.externalID')
 }
 
 function getServices(){
