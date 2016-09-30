@@ -27,9 +27,9 @@ function getServices(){
   local namespace=$1
 
   if [ ! -z "$namespace" ]; then
-    echo $(curl -s $url/api/v1/namespaces/$namespace/services/ | jsonValue 'selfLink')
+    echo $(curl -s $url/api/v1/namespaces/$namespace/services/ | jq -r '.items[].metadata.name')
   else
-    echo $(curl -s $url/api/v1/services/ | jsonValue 'selfLink')
+    echo $(curl -s $url/api/v1/services/ | jq -r '.items[].metadata.name')
   fi
 }
 
