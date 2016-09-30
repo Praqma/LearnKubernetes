@@ -47,8 +47,8 @@ function getServiceNodePorts(){
 
 function getServiceNamespace(){
   local service=$1
-
-  echo $(curl -s $url/api/v1/services/ | grep -B 1 $service |  jsonValue 'namespace')
+  echo $(curl -s $url/api/v1/services/ | jq -r '.items[] | select(.metadata.name == "my-nginx") | .metadata.namespace')
+#  echo $(curl -s $url/api/v1/services/ | grep -B 1 $service |  jsonValue 'namespace')
 
 }
 
