@@ -1,4 +1,5 @@
 source ../apiReader/apiReader.f
+
 Services=$(getServices default | tr " " "\n")
 Nodes=$(getNodeNames | tr " " "\n")
 
