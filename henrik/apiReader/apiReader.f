@@ -56,9 +56,9 @@ function getPods(){
   local namespace=$1
 
   if [ ! -z "$namespace" ]; then
-    echo $(curl -s $url/api/v1/namespaces/$namespace/pods | grep -A 3 "metadata" |  jsonValue 'name')
+    echo $(curl -s $url/api/v1/namespaces/$namespace/pods | jq -r '.items[].metadata.name')
   else
-    echo $(curl -s $url/api/v1/pods | grep -A 3 "metadata" |  jsonValue 'name')
+    echo $(curl -s $url/api/v1/pods | jq -r '.items[].metadata.name')
   fi
 }
 
