@@ -11,16 +11,17 @@ echo "<VirtualHost *:80>
 
 printf '%s\n' "$Services" | while IFS= read -r line
 do
-ServicePort=$(getServiceNodePorts "default" $line)
+ServicePort=$(getServiceNodePorts $line "default")
+Endpoints=$(getServiceEndpoints $line "default")
 
-if [ ! -z "$ServicePort" ]; then
+if [ ! "$ServicePort" == "null" ] && [ ! "$Endpoints" == "" ]; then
   echo "
         <Proxy balancer://$line>"
 
 
   printf '%s\n' "$Nodes" | while IFS= read -r line
   do
-    nodeIP=$(kubectl describe node $line | grep "Addresses" | cut -d"," -f1 | rev | cut -d$'\t' -f1 | rev)
+    nodeIP=$(getNodeIPs $line)
     echo "                BalancerMember http://$nodeIP:$ServicePort"
   done
   echo "
@@ -67,8 +68,10 @@ echo "
 
 printf '%s\n' "$Services" | while IFS= read -r line
 do
-  ServicePort=$(getServiceNodePorts "default" $line)
-  if [ ! -z "$ServicePort" ]; then
+  ServicePort=$(getServiceNodePorts $line "default")
+  Endpoints=$(getServiceEndpoints $line "default")
+
+  if [ ! "$ServicePort" == "null" ] && [ ! "$Endpoints" == "" ]; then
     echo "        ProxyPass /$line balancer://$line
         ProxyPassReverse /$line balancer://$line"
   fi
