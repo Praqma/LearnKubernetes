@@ -37,6 +37,18 @@ get the port a pod/service is bound to in a node when using NodePort
 32226
 ```
 
+Get Endports for a Service not knowing the namespace by
+```
+[hoeghh@localhost apiReader]$ getServiceEndpoints my-nginx
+10.246.28.3 10.246.90.5
+```
+
+Get Endports for a Service knowing the namespace by
+```
+[hoeghh@localhost apiReader]$ getServiceEndpoints my-nginx default
+10.246.28.3 10.246.90.5
+
+```
 
 Get the namespace of which the pod lives by 
 ```
