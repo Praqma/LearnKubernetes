@@ -13,9 +13,9 @@ function getNodeIPs(){
   local nodename=$1
 
   if [ ! -z "$nodename" ]; then
-    echo $(curl -s $url/api/v1/nodes/$nodename | jsonValue 'address')
+    echo $(curl -s $url/api/v1/nodes/$nodename | jq -r '.status.addresses[] | select(.type == "InternalIP") | .address')
   else
-    echo $(curl -s $url/api/v1/nodes | jsonValue 'address')
+    echo $(curl -s $url/api/v1/nodes | jq -r '.items[].status.addresses[] | select(.type == "InternalIP") | .address')
   fi
 }
 
