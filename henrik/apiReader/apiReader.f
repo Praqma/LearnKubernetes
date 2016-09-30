@@ -66,9 +66,12 @@ function getPodNamespace(){
 }
 
 function getPodIp(){
-  local podName=$2
-  local namespace=$1
-  echo $(curl -s $url/api/v1/namespaces/$namespace/pods/$podName | jsonValue 'podIP')
+  local podName=$1
+  local namespace=$2
+
+  if [ ! -z "$namespace" ]; then
+    echo $(curl -s $url/api/v1/namespaces/$namespace/pods/$podName | jq -r '.status.podIP')
+  fi
 }
 
 function getDeployments(){
