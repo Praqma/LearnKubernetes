@@ -34,8 +34,8 @@ function getServices(){
 }
 
 function getServiceNodePorts(){
-  local namespace=$2
   local service=$1
+  local namespace=$2
 
   if [ ! -z "$namespace" ]; then
     echo $(curl -s $url/api/v1/namespaces/$namespace/services/$service | jq -r '.spec.ports[].nodePort')
@@ -43,6 +43,22 @@ function getServiceNodePorts(){
     echo $(curl -s $url/api/v1/services/ | jq -r '.items[] | select(.metadata.name == "'$service'") | .spec.ports[].nodePort')
   fi
 
+}
+
+function getServiceEndpoints(){
+  local service=$1
+  local namespace=$2
+
+  if [ "$namespace" == "" ];then
+    namespace=$(getServiceNamespace $service)
+  fi
+
+  local subset=$(curl -s $url/api/v1/namespaces/$namespace/endpoints/$service | jq -r '.subsets[]')
+
+  if [ ! -z "$subset" ]; then
+    echo $(curl -s $url/api/v1/namespaces/$namespace/endpoints/$service | jq -r '.subsets[].addresses[].ip')
+
+  fi
 }
 
 function getServiceNamespace(){
