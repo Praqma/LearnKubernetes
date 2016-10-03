@@ -7,7 +7,7 @@ function createLoadBalancer(){
   local line=""
 
   rm -f *.conf 
-  rm -f *.bal 
+  rm -f *.bl 
 
   echo "<VirtualHost *:80>
         ProxyRequests off
@@ -60,7 +60,7 @@ function createServiceLB(){
   local Endpoints=$(getServiceEndpoints $Service "default")
 
   if [ ! "$ServicePort" == "null" ] && [ ! "$Endpoints" == "" ]; then
-    echo "        <Proxy balancer://$Service>" > $Service.service.bal
+    echo "        <Proxy balancer://$Service>" > $Service.service.bl
 
     printf '%s\n' "$Nodes" | while IFS= read -r line
     do
