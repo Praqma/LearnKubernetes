@@ -15,7 +15,7 @@ function createLoadBalancer(){
         ServerName example.org
         ProxyPreserveHost On
 
-        IncludeOptional conf.d/*.bal" > kubernetes.services.conf
+        IncludeOptional conf.d/*.bl" > kubernetes.services.conf
  
 
   printf '%s\n' "$Services" | (while IFS= read -r line
@@ -65,7 +65,7 @@ function createServiceLB(){
     printf '%s\n' "$Nodes" | while IFS= read -r line
     do
       local nodeIP=$(getNodeIPs $line)
-      echo "                BalancerMember http://$nodeIP:$ServicePort" >> $Service.service.bal
+      echo "                BalancerMember http://$nodeIP:$ServicePort" >> $Service.service.bl
     done
 
     echo "
@@ -85,6 +85,6 @@ function createServiceLB(){
         </Proxy>
 
         ProxyPass /$Service balancer://$Service
-        ProxyPassReverse /$Service balancer://$Service" >> $Service.service.bal
+        ProxyPassReverse /$Service balancer://$Service" >> $Service.service.bl
   fi
 }
