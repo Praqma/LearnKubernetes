@@ -1,14 +1,5 @@
 url="localhost:8001"
 
-function jsonValue() {
-# Found here :
-# https://gist.github.com/cjus/1047794
-#
-  KEY=$1
-  num=$2
-  awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/'$KEY'\042/){print $(i+1)}}}' | tr -d '"' | sed -n ${num}p | sed 's@.*/@@' | awk '{$1=$1};1'
-}
-
 function getNodeIPs(){
   local nodename=$1
 
@@ -94,9 +85,9 @@ function getDeployments(){
   local namespace=$1
 
   if [ ! -z "$namespace" ]; then
-    echo $(curl -s $url/apis/extensions/v1beta1/namespaces/$namespace/deployments | grep -A 3 "metadata" |  jsonValue 'name')
+    echo $(curl -s $url/apis/extensions/v1beta1/namespaces/$namespace/deployments | jq -r '.items[].metadata.name')
   else
-    echo $(curl -s $url/apis/extensions/v1beta1/deployments | grep -A 3 "metadata" |  jsonValue 'name')
+    echo $(curl -s $url/apis/extensions/v1beta1/deployments | jq -r '.items[].metadata.name')
   fi
 
 }
