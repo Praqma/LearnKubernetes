@@ -26,7 +26,7 @@ Then expose this as a service, type=NodePort
 kubectl expose deployment my-nginx --port=80 --type=NodePort
 ```
 
-Now run ./run.sh to update your Apache LoadBalancer
+Now run ./run.sh to update your Apache LoadBalancer (for HAProxy, see bottom of this page)
 ```
 [hoeghh@localhost nodeport-loadbalancer]$ ./run.sh 
  - Running createLoadBalancer
@@ -66,3 +66,6 @@ Commercial support is available at
 </body>
 </html>
 ```
+
+## HAProxy
+If you want to output a haproxy.conf instead, then call the createLoadbalancer with the argument 'haproxy' instead. I will later split up run.sh in an Apache and HAProxy script.
