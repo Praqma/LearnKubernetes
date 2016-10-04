@@ -46,7 +46,6 @@ function createLoadBalancer(){
         # or everything in the site.
         ProxyPass /balancer-manager !
 
-        IncludeOptional conf.d/*.prox
 </VirtualHost>" >> kubernetes.services.conf
 
 } 
