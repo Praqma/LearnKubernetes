@@ -26,16 +26,16 @@ function createLBHaproxy(){
   local line=""
 
   echo "global
-        stats timeout 30s" > haproxy.conf
+    stats timeout 30s" > haproxy.conf
 
   echo "defaults
-        log     global
-        mode    http
-        option  httplog
-        option  dontlognull
-        timeout connect 5000
-        timeout client  50000
-        timeout server  50000
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 5000
+    timeout client  50000
+    timeout server  50000
         " >> haproxy.conf
 
   printf '%s\n' "$Services" | (while IFS= read -r line
