@@ -1618,7 +1618,15 @@ worker2.example.com   Ready     41s
 **Note:** Sometimes the nodes do not show up as Ready in the output of `kubectl get nodes` command. It is ok to reboot the worker nodes. 
 
 
+**Note:** Worker node configuration is complete at this point.
+
+------
+## Some notes on CIDR/CNI IP address showing/not-showing on the worker nodes:
+
 (to do) Add a step to make sure that the worker nodes have got the CIDR IP address. Right now, in my setup, I do not see CIDR addresses assigned to my worker nodes, even though they show up as Ready . 
+
+
+( **UPDATE:** I recently found out that the CIDR network assigned to each worker node shows up in the output of `kubectl describe node <NodeName>` command. This is very handy! )
 
 ```
 [root@worker1 ~]# ifconfig
@@ -1925,6 +1933,8 @@ PING 10.200.0.2 (10.200.0.2) 56(84) bytes of data.
 ```
 
 We will setup routing in the coming steps.
+
+
 
 ------
 # Configuring the Kubernetes Client - Remote Access
