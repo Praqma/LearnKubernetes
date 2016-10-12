@@ -2513,6 +2513,12 @@ rtt min/avg/max/mdev = 1.463/1.463/1.463/0.000 ms
 
 Clearly, we are able to ping pods from our load balancer. Good!
 
+Create a combined certificate and then move certificates to /var/lib/kubernetes/. 
+```
+mkdir /var/lib/kubernetes/
+cat /root/kubernetes.pem /root/kubernetes-key.pem > /root/kubernetes-combined.pem
+mv /root/*.pem /var/lib/kubernetes/
+```
 
 Next, we need the load balancer script and config files. You can clone the entire LearnKubernetes repository somewhere on the load balancer's file system. (You need to have git on load balancer machine!)
 
