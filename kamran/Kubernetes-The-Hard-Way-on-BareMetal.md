@@ -625,7 +625,7 @@ Certificate:
 ## Copy the certificates to the nodes:
 
 ```
-[kamran@kworkhorse certs-baremetal]$ for i in etcd1 etcd2 controller1 controller2 worker1 worker2; do scp ca.pem kubernetes-key.pem kubernetes.pem  root@${i}:/root/ ; done
+[kamran@kworkhorse certs-baremetal]$ for i in lb etcd1 etcd2 controller1 controller2 worker1 worker2; do scp ca.pem kubernetes-key.pem kubernetes.pem  root@${i}:/root/ ; done
 ca.pem                                                                                                        100% 1350     1.3KB/s   00:00    
 kubernetes-key.pem                                                                                            100% 1679     1.6KB/s   00:00    
 kubernetes.pem                                                                                                100% 1927     1.9KB/s   00:00    
