@@ -2142,7 +2142,7 @@ rtt min/avg/max/mdev = 0.586/0.586/0.586/0.000 ms
 
 Great! It works!
 
-# Deploying the cluster add-on - DNS
+# Deploying the cluster add-on: DNS (skydns)
 
 DNS add-on is required for every Kubernetes cluster. ( I wonder why it is not part of core kubernetes!) . Without the DNS add-on the following things will not work:
 
