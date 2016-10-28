@@ -345,7 +345,7 @@ Error: corosync not running
 
 # Start the cluster:
 
-So far we have configured **pcsd** and **corosync** , and we have only started **pcsd** service. It is time to start the cluster. You have to use the same node you used to authenticate to the cluster. i.e. ha-web1 in our case; and use the `pcs cluster start --all` command.
+So far we have configured **corosync** through **pcsd**, and we have only started **pcsd** service. It is time to start the cluster. You have to use the same node you used to authenticate to the cluster. i.e. ha-web1 in our case; and use the `pcs cluster start --all` command.
 
 ```
 [root@ha-web1 ~]# pcs cluster start --all
@@ -473,234 +473,822 @@ Errors found during check: config not valid
 [root@ha-web1 ~]# 
 ```
 
-**Notes:**
-* An alternative to using the pcs cluster start --all command is to issue either of the below command sequences on each node in the cluster separately. e.g.
+**Note:** An alternative to using the `pcs cluster start --all` command is to issue either of the below command sequences on each node in the cluster separately. e.g.
 
 ``` 
- # pcs cluster start
- Starting Cluster...
+pcs cluster start
 ``` 
 or
 
 ```
-# systemctl start corosync.service
-# systemctl start pacemaker.service
+systemctl start corosync.service
+
+systemctl start pacemaker.service
 ```
 
-* In this example, we are not enabling the **corosync** and **pacemaker** services to start at boot. If a cluster node fails or is rebooted, you will need to run `pcs cluster start nodenam` (or `--all`) to start the cluster on it. While you could enable the services to start at boot; requiring a manual start of cluster services gives you the opportunity to do a post-mortem investigation of a node failure before returning it to the cluster. So it is a personal preference to setup **corosync** and **pacemaker** to start at boot or not.
+**Note:** In this example, we are not enabling the **corosync** and **pacemaker** services to start at boot. If a cluster node fails or is rebooted, you will need to run `pcs cluster start nodenam` (or `--all`) to start the cluster on it. While you could enable the services to start at boot; requiring a manual start of cluster services gives you the opportunity to do a post-mortem investigation of a node failure before returning it to the cluster. So it is a personal preference to setup **corosync** and **pacemaker** to start at boot or not.
 
 
-
-
-
-
-
-
-
-
-
-
-
----------- 
-
-
-
-
-On both nodes, copy the corosync example file as corosync config file.
+Let us check status of various components again:
 
 ```
-cp /etc/corosync/corosync.conf.example /etc/corosync/corosync.conf 
-```
+[root@ha-web1 ~]# pcs status nodes
+Pacemaker Nodes:
+ Online: ha-web1.example.com ha-web2.example.com
+ Standby:
+ Maintenance:
+ Offline:
+Pacemaker Remote Nodes:
+ Online:
+ Standby:
+ Maintenance:
+ Offline:
 
-The config file should look like the one shown below. **Make sure** that the bindnetaddr is the same network , which you are connnected to using the network interface of this machine. In my case, my nodes are connected to `192.168.124.0/24` network. You do not need to provide `/24` in the `bindnetaddr` directive in the config file. If you have multiple network interface cards then read the example config file for directions.
-
-```
- # grep -v \# /etc/corosync/corosync.conf
-
-totem {
-	version: 2
-
-	crypto_cipher: none
-	crypto_hash: none
-
-	interface {
-		ringnumber: 0
-		bindnetaddr: 192.168.124.0
-		mcastaddr: 239.255.1.1
-		mcastport: 5405
-		ttl: 1
-	}
-}
-
-logging {
-	fileline: off
-	to_stderr: no
-	to_logfile: yes
-	logfile: /var/log/cluster/corosync.log
-	to_syslog: yes
-	debug: off
-	timestamp: on
-	logger_subsys {
-		subsys: QUORUM
-		debug: off
-	}
-}
-
-quorum {
-}
-```
-
-Start corosync service on both nodes:
-
-```
-service corosync start
-```
-
-Verify that the service is running:
-```
- # service corosync status
-
-Redirecting to /bin/systemctl status  corosync.service
-● corosync.service - Corosync Cluster Engine
-   Loaded: loaded (/usr/lib/systemd/system/corosync.service; disabled; vendor preset: disabled)
-   Active: active (running) since Thu 2016-10-27 15:19:26 CEST; 5min ago
-  Process: 1296 ExecStop=/usr/share/corosync/corosync stop (code=exited, status=0/SUCCESS)
-  Process: 1311 ExecStart=/usr/share/corosync/corosync start (code=exited, status=0/SUCCESS)
- Main PID: 1324 (corosync)
-    Tasks: 2 (limit: 512)
-   CGroup: /system.slice/corosync.service
-           └─1324 corosync
-
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [QB    ] server name: cfg
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync cluster closed process group service v1.01 [2]
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [QB    ] server name: cpg
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync profile loading service [4]
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync cluster quorum service v0.1 [3]
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [QB    ] server name: quorum
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [TOTEM ] A new membership (192.168.124.51:4) was formed. Members joined: 3232267315
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [MAIN  ] Completed service synchronization, ready to provide service.
-Oct 27 15:19:26 ha-web1.example.com corosync[1311]: Starting Corosync Cluster Engine (corosync): [  OK  ]
-Oct 27 15:19:26 ha-web1.example.com systemd[1]: Started Corosync Cluster Engine.
+[root@ha-web1 ~]#
 ```
 
 
-You should have the following in your logs, on each node:
-
 ```
- # journalctl -u 
-Oct 27 15:19:25 ha-web1.example.com systemd[1]: Starting Corosync Cluster Engine...
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [TOTEM ] Initializing transport (UDP/IP Multicast).
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [TOTEM ] Initializing transmit/receive security (NSS) crypto: none hash: none
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [TOTEM ] The network interface [192.168.124.51] is now up.
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync configuration map access [0]
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [QB    ] server name: cmap
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync configuration service [1]
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [QB    ] server name: cfg
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync cluster closed process group service v1.01 [2]
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [QB    ] server name: cpg
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync profile loading service [4]
-Oct 27 15:19:25 ha-web1.example.com corosync[1324]:   [SERV  ] Service engine loaded: corosync cluster quorum service v0.1 [3]
+[root@ha-web1 ~]# pcs status resources
+NO resources configured
+[root@ha-web1 ~]# 
 ```
 
 
-On node1, watch the logs, because you want to see if starting corosync service makes the other node join the ring/cluster or not.
+```
+[root@ha-web1 ~]# pcs status corosync
+
+Membership information
+----------------------
+    Nodeid      Votes Name
+         1          1 ha-web1.example.com (local)
+         2          1 ha-web2.example.com
+[root@ha-web1 ~]# 
+```
+
+You should be able to see that both nodes have joined the cluster.
+
+
+You can now check the status of corosync cluster using `corosync-cfgtool` , as follows:
 
 ```
- # journalctl -xef
+[root@ha-web1 ~]# corosync-cfgtool -s
+Printing ring status.
+Local node ID 1
+RING ID 0
+	id	= 192.168.124.51
+	status	= ring 0 active with no faults
+[root@ha-web1 ~]# 
+```
+
+The same is shown on the other node:
+
+```
+[root@ha-web2 ~]# corosync-cfgtool -s
+Printing ring status.
+Local node ID 2
+RING ID 0
+	id	= 192.168.124.52
+	status	= ring 0 active with no faults
+[root@ha-web2 ~]# 
+```
+
+It is very important to note few things in the output of `corosync-cfgtool -s` command. These are:
+* Our fixed IP of the node (on which this command is issued), is shown and *not* `127.0.0.1` .
+* There are no faults reported in the status.
+
+If you see something different, you should stop here and check your configurations from beginning. You may have skipped something important, or misconfigured something.
+
+
+Next, check cluster membership uing `corosync-cmapctl`:
+
+
+```
+[root@ha-web1 ~]# corosync-cmapctl  | grep members
+runtime.totem.pg.mrp.srp.members.1.config_version (u64) = 0
+runtime.totem.pg.mrp.srp.members.1.ip (str) = r(0) ip(192.168.124.51) 
+runtime.totem.pg.mrp.srp.members.1.join_count (u32) = 1
+runtime.totem.pg.mrp.srp.members.1.status (str) = joined
+runtime.totem.pg.mrp.srp.members.2.config_version (u64) = 0
+runtime.totem.pg.mrp.srp.members.2.ip (str) = r(0) ip(192.168.124.52) 
+runtime.totem.pg.mrp.srp.members.2.join_count (u32) = 2
+runtime.totem.pg.mrp.srp.members.2.status (str) = joined
+[root@ha-web1 ~]#
+```
+
+
+Okay, corosync is working. We get it! Enough verification for corosync. Lets move on with life.
+
+
+------
+
+# Pacemaker 
+
+At this stage, we have **pcsd** and **corosync**. And, actually we also have pacemaker installed correctly! We just have to verify it! (It got installed by yum, and got configured when we created and started the cluster using the `pcs` command in the previos section.)
+
+```
+[root@ha-web1 ~]# ps axf | egrep "corosync|pacemaker" 
+ 2103 ?        Ssl  113:04 corosync
+ 2120 ?        Ss     0:00 /usr/sbin/pacemakerd -f
+ 2121 ?        Ss     0:00  \_ /usr/libexec/pacemaker/cib
+ 2122 ?        Ss     0:00  \_ /usr/libexec/pacemaker/stonithd
+ 2123 ?        Ss     0:00  \_ /usr/libexec/pacemaker/lrmd
+ 2124 ?        Ss     0:00  \_ /usr/libexec/pacemaker/attrd
+ 2125 ?        Ss     0:00  \_ /usr/libexec/pacemaker/pengine
+ 2126 ?        Ss     0:01  \_ /usr/libexec/pacemaker/crmd
+[root@ha-web1 ~]# 
+```
+
+Or
+
+```
+[root@ha-web1 ~]# pstree -A $(pidof pacemakerd)
+pacemakerd-+-attrd
+           |-cib
+           |-crmd
+           |-lrmd
+           |-pengine
+           `-stonithd
+[root@ha-web1 ~]#
+```
+
+We notice that pacemaker master process is running and it's sub processes also running. 
+
+Next check `pcs status` :
+
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+WARNING: no stonith devices and stonith-enabled is not false
+Stack: corosync
+Current DC: ha-web2.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Fri Oct 28 22:17:40 2016		Last change: Fri Oct 28 13:21:25 2016 by hacluster via crmd on ha-web2.example.com
+
+2 nodes and 0 resources configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ]
+
+Full list of resources:
+
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+Lets make a note of few things in the output from `pcs status` command:
+* There is a warning about "no stonith devices ..." ; which is OK for now.
+* Stack is *corosync*.
+* Current DC is node2 i.e. ha-web2.
+* There are two nodes in the cluster
+* There are no resources configured yet
+* Both cluster nodes appear online
+* Corosync and Pacemaker show as **active/disabled** because they are active , but configured to not boot at system boot.
+* pcsd is active and is enabled to start at system boot.
+
+Also check that `journalctl | grep error` does not return any errors on any of the cluster nodes. Such as errors with cluster components **corosync**, **pacemake** or **pcsd**.
+
+We notice that on node `ha-web1`, there are no errors reported in `journalctl`, but on node `ha-web2`, we see errors about STONITH reported by `pengine` . 
+
+```
+[root@ha-web2 ~]# journalctl | grep error
 . . . 
-Oct 27 15:25:37 ha-web1.example.com corosync[1324]:   [TOTEM ] A new membership (192.168.124.51:8) was formed. Members joined: 3232267316
-Oct 27 15:25:37 ha-web1.example.com corosync[1324]:   [MAIN  ] Completed service synchronization, ready to provide service.
+Oct 28 22:38:24 ha-web2.example.com pengine[1859]:    error: Resource start-up disabled since no STONITH resources have been defined
+Oct 28 22:38:24 ha-web2.example.com pengine[1859]:    error: Either configure some or disable STONITH with the stonith-enabled option
+Oct 28 22:38:24 ha-web2.example.com pengine[1859]:    error: NOTE: Clusters with shared data need STONITH to ensure data integrity
+. . . 
 ```
 
-Notice that the two nodes have now formed a cluster (using TOTEM ring). 
-
-You should be able to notice the same when you do `service corosync status` :
-
-```
-[root@ha-web2 ~]# service corosync status
-Redirecting to /bin/systemctl status  corosync.service
-● corosync.service - Corosync Cluster Engine
-   Loaded: loaded (/usr/lib/systemd/system/corosync.service; disabled; vendor preset: disabled)
-   Active: active (running) since Thu 2016-10-27 15:25:37 CEST; 8min ago
-  Process: 1176 ExecStop=/usr/share/corosync/corosync stop (code=exited, status=0/SUCCESS)
-  Process: 1191 ExecStart=/usr/share/corosync/corosync start (code=exited, status=0/SUCCESS)
- Main PID: 1205 (corosync)
-    Tasks: 2 (limit: 512)
-   CGroup: /system.slice/corosync.service
-           └─1205 corosync
-
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [QB    ] server name: cpg
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [SERV  ] Service engine loaded: corosync profile loading service [4]
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [SERV  ] Service engine loaded: corosync cluster quorum service v0.1 [3]
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [QB    ] server name: quorum
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [TOTEM ] A new membership (192.168.124.52:4) was formed. Members joined: 3232267316
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [MAIN  ] Completed service synchronization, ready to provide service.
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [TOTEM ] A new membership (192.168.124.51:8) was formed. Members joined: 3232267315
-Oct 27 15:25:37 ha-web2.example.com corosync[1205]:   [MAIN  ] Completed service synchronization, ready to provide service.
-Oct 27 15:25:37 ha-web2.example.com corosync[1191]: Starting Corosync Cluster Engine (corosync): [  OK  ]
-Oct 27 15:25:37 ha-web2.example.com systemd[1]: Started Corosync Cluster Engine.
-[root@ha-web2 ~]# 
-```
+We can ignore the STONITH related errors for now, because we wil configure it in the upcoming section.
 
 
-## Enable corosync and other two services - on both nodes:
+Before we move on to the next step, it is good to change the validity of the configuration.
 
 ```
-[root@ha-web1 ~]# systemctl enable corosync pacemaker pcsd
-Created symlink from /etc/systemd/system/multi-user.target.wants/corosync.service to /usr/lib/systemd/system/corosync.service.
-Created symlink from /etc/systemd/system/multi-user.target.wants/pacemaker.service to /usr/lib/systemd/system/pacemaker.service.
-Created symlink from /etc/systemd/system/multi-user.target.wants/pcsd.service to /usr/lib/systemd/system/pcsd.service.
+[root@ha-web1 ~]# crm_verify -L -V
+   error: unpack_resources:	Resource start-up disabled since no STONITH resources have been defined
+   error: unpack_resources:	Either configure some or disable STONITH with the stonith-enabled option
+   error: unpack_resources:	NOTE: Clusters with shared data need STONITH to ensure data integrity
+Errors found during check: config not valid
 [root@ha-web1 ~]# 
 ```
 
 ```
-[root@ha-web2 ~]# systemctl enable corosync pacemaker pcsd
-Created symlink from /etc/systemd/system/multi-user.target.wants/corosync.service to /usr/lib/systemd/system/corosync.service.
-Created symlink from /etc/systemd/system/multi-user.target.wants/pacemaker.service to /usr/lib/systemd/system/pacemaker.service.
-Created symlink from /etc/systemd/system/multi-user.target.wants/pcsd.service to /usr/lib/systemd/system/pcsd.service.
+[root@ha-web2 ~]# crm_verify -L -V
+   error: unpack_resources:	Resource start-up disabled since no STONITH resources have been defined
+   error: unpack_resources:	Either configure some or disable STONITH with the stonith-enabled option
+   error: unpack_resources:	NOTE: Clusters with shared data need STONITH to ensure data integrity
+Errors found during check: config not valid
 [root@ha-web2 ~]# 
 ```
 
-# Start Pacemaker service:
+The configuration has errors and is invalid. There is no STONITH and the resource startup is disabled. Okay, we get it! Lets do something about it!
+ 
 
-On both nodes:
+The brief explanation is:
+
+In order to guarantee the safety of your data, the default for STONITH in Pacemaker is enabled. However, it also knows when no STONITH configuration has been supplied and reports this as a problem (since the cluster would not be able to make progress if a situation requiring node fencing arose). We will disable this feature for now and configure it later. I will discuss STONITH later, and explain why it matters, and in some cases, why not!
+
+
+## Disable STONITH (temporarily)
+
+To disable STONITH for now, set the `stonith-enabled` cluster option to false:
 
 ```
-[root@ha-web1 ~]# service pacemaker status
-Redirecting to /bin/systemctl status  pacemaker.service
-● pacemaker.service - Pacemaker High Availability Cluster Manager
-   Loaded: loaded (/usr/lib/systemd/system/pacemaker.service; enabled; vendor preset: disabled)
-   Active: active (running) since Thu 2016-10-27 15:37:36 CEST; 2min 27s ago
-     Docs: man:pacemakerd
-           http://clusterlabs.org/doc/en-US/Pacemaker/1.1-pcs/html/Pacemaker_Explained/index.html
- Main PID: 1408 (pacemakerd)
-   CGroup: /system.slice/pacemaker.service
-           ├─1408 /usr/sbin/pacemakerd -f
-           ├─1409 /usr/libexec/pacemaker/cib
-           ├─1410 /usr/libexec/pacemaker/stonithd
-           ├─1411 /usr/libexec/pacemaker/lrmd
-           ├─1412 /usr/libexec/pacemaker/attrd
-           ├─1413 /usr/libexec/pacemaker/pengine
-           └─1414 /usr/libexec/pacemaker/crmd
+[root@ha-web1 ~]# pcs property set stonith-enabled=false
+```
 
-Oct 27 15:37:37 ha-web1.example.com crmd[1414]:    error: Corosync quorum is not configured
-Oct 27 15:37:37 ha-web1.example.com cib[1409]:   notice: Defaulting to uname -n for the local corosync node name
-Oct 27 15:39:58 ha-web1.example.com pacemakerd[1408]:   notice: Could not obtain a node name for corosync nodeid 3232267316
-Oct 27 15:39:58 ha-web1.example.com stonith-ng[1410]:   notice: Could not obtain a node name for corosync nodeid 3232267316
-Oct 27 15:39:58 ha-web1.example.com stonith-ng[1410]:   notice: Node (null) state is now member
-Oct 27 15:39:58 ha-web1.example.com attrd[1412]:   notice: Could not obtain a node name for corosync nodeid 3232267316
-Oct 27 15:39:58 ha-web1.example.com attrd[1412]:   notice: Node (null) state is now member
-Oct 27 15:39:58 ha-web1.example.com cib[1409]:   notice: Could not obtain a node name for corosync nodeid 3232267316
-Oct 27 15:39:58 ha-web1.example.com cib[1409]:   notice: Node (null) state is now member
-Oct 27 15:39:59 ha-web1.example.com crmd[1414]:   notice: Could not obtain a node name for corosync nodeid 3232267316
+Then, verify again:
+```
+[root@ha-web1 ~]# crm_verify -L -V
 [root@ha-web1 ~]# 
-``` 
+```
 
-**Notice:** The error : `error: Corosync quorum is not configured`
+Notice, no errors reported this time by `crm_verify`, and no more erros being reported in system logs (`journalctl`).
+
+Lets do `pcs status` again just to know how does it look like:
+
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web2.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Sat Oct 29 00:53:56 2016		Last change: Fri Oct 28 23:50:58 2016 by root via cibadmin on ha-web1.example.com
+
+2 nodes and 0 resources configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ]
+
+Full list of resources:
+
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+Notice, that PCS does not show the warning about STONITH not being configured. Rest of the output (status) is same as it was before disabling STONITH.
 
 
 
 
 
+## Location of pacemaker configurations:
+
+At this time you may be wondering *"where are all these configurations stored?"* Well, we already know about corosync that it has it's configuration file `corosync.conf`, stored as `/etc/corosync/corosync.conf` . 
+
+The configuration file used by pacemaker is `cib.xml` and is stored as `/var/lib/pacemaker/cib/cib.xml` .
+
+Please note that these two files must **not** be edited by hand. Instead you must use `pcs` commands to manage the cluster, which creates/adjusts these files accordingly. This files are maintained on both nodes by `pcsd`. (And we know that pcs is an interface for `pcsd`.)
 
 
+The `pcs cluster cib` shows you the *Cluster Information Base* by actually using contents of the `cib.xml` . 
+
+```
+[root@ha-web1 ~]# pcs cluster cib
+<cib crm_feature_set="3.0.10" validate-with="pacemaker-2.5" epoch="6" num_updates="0" admin_epoch="0" cib-last-written="Fri Oct 28 23:50:58 2016" update-origin="ha-web1.example.com" update-client="cibadmin" update-user="root" have-quorum="1" dc-uuid="2">
+  <configuration>
+    <crm_config>
+      <cluster_property_set id="cib-bootstrap-options">
+        <nvpair id="cib-bootstrap-options-have-watchdog" name="have-watchdog" value="false"/>
+        <nvpair id="cib-bootstrap-options-dc-version" name="dc-version" value="1.1.15-1.fc24-e174ec8"/>
+        <nvpair id="cib-bootstrap-options-cluster-infrastructure" name="cluster-infrastructure" value="corosync"/>
+        <nvpair id="cib-bootstrap-options-cluster-name" name="cluster-name" value="mywebcluster"/>
+        <nvpair id="cib-bootstrap-options-stonith-enabled" name="stonith-enabled" value="false"/>
+      </cluster_property_set>
+    </crm_config>
+    <nodes>
+      <node id="1" uname="ha-web1.example.com"/>
+      <node id="2" uname="ha-web2.example.com"/>
+    </nodes>
+    <resources/>
+    <constraints/>
+  </configuration>
+  <status>
+    <node_state id="2" uname="ha-web2.example.com" in_ccm="true" crmd="online" crm-debug-origin="do_state_transition" join="member" expected="member">
+      <transient_attributes id="2">
+        <instance_attributes id="status-2">
+          <nvpair id="status-2-shutdown" name="shutdown" value="0"/>
+        </instance_attributes>
+      </transient_attributes>
+      <lrm id="2">
+        <lrm_resources/>
+      </lrm>
+    </node_state>
+    <node_state id="1" uname="ha-web1.example.com" in_ccm="true" crmd="online" crm-debug-origin="do_state_transition" join="member" expected="member">
+      <transient_attributes id="1">
+        <instance_attributes id="status-1">
+          <nvpair id="status-1-shutdown" name="shutdown" value="0"/>
+        </instance_attributes>
+      </transient_attributes>
+      <lrm id="1">
+        <lrm_resources/>
+      </lrm>
+    </node_state>
+  </status>
+</cib>
+[root@ha-web1 ~]#
+```
+
+
+Notice that our configuration about (disabled) STONITH appears as following in the output above:
+
+```
+        <nvpair id="cib-bootstrap-options-stonith-enabled" name="stonith-enabled" value="false"/>
+```
+
+In fact, you can use the same command `pcs cluster cib` to save the cluster information as some file, like so:
+
+```
+[root@ha-web1 ~]# pcs cluster cib pacemaker-cib-backup.xml
+```
+
+Notice the new `.xml` file in our current directory.
+
+```
+[root@ha-web1 ~]# ls -lh 
+total 8.0K
+-rw-------. 1 root root 1.4K Oct 27 13:26 anaconda-ks.cfg
+-rw-r--r--  1 root root 2.0K Oct 29 00:13 pacemaker-cib-backup.xml
+[root@ha-web1 ~]# 
+```
+
+
+```
+[root@ha-web1 ~]# cat pacemaker-cib-backup.xml 
+<cib crm_feature_set="3.0.10" validate-with="pacemaker-2.5" epoch="6" num_updates="0" admin_epoch="0" cib-last-written="Fri Oct 28 23:50:58 2016" update-origin="ha-web1.example.com" update-client="cibadmin" update-user="root" have-quorum="1" dc-uuid="2">
+  <configuration>
+    <crm_config>
+      <cluster_property_set id="cib-bootstrap-options">
+        <nvpair id="cib-bootstrap-options-have-watchdog" name="have-watchdog" value="false"/>
+        <nvpair id="cib-bootstrap-options-dc-version" name="dc-version" value="1.1.15-1.fc24-e174ec8"/>
+        <nvpair id="cib-bootstrap-options-cluster-infrastructure" name="cluster-infrastructure" value="corosync"/>
+        <nvpair id="cib-bootstrap-options-cluster-name" name="cluster-name" value="mywebcluster"/>
+        <nvpair id="cib-bootstrap-options-stonith-enabled" name="stonith-enabled" value="false"/>
+      </cluster_property_set>
+    </crm_config>
+    <nodes>
+      <node id="1" uname="ha-web1.example.com"/>
+      <node id="2" uname="ha-web2.example.com"/>
+    </nodes>
+    <resources/>
+    <constraints/>
+  </configuration>
+  <status>
+    <node_state id="2" uname="ha-web2.example.com" in_ccm="true" crmd="online" crm-debug-origin="do_state_transition" join="member" expected="member">
+      <transient_attributes id="2">
+        <instance_attributes id="status-2">
+          <nvpair id="status-2-shutdown" name="shutdown" value="0"/>
+        </instance_attributes>
+      </transient_attributes>
+      <lrm id="2">
+        <lrm_resources/>
+      </lrm>
+    </node_state>
+    <node_state id="1" uname="ha-web1.example.com" in_ccm="true" crmd="online" crm-debug-origin="do_state_transition" join="member" expected="member">
+      <transient_attributes id="1">
+        <instance_attributes id="status-1">
+          <nvpair id="status-1-shutdown" name="shutdown" value="0"/>
+        </instance_attributes>
+      </transient_attributes>
+      <lrm id="1">
+        <lrm_resources/>
+      </lrm>
+    </node_state>
+  </status>
+</cib>
+[root@ha-web1 ~]# 
+```
+
+You can use this file to restore a cluster's configuration by using `cib-push`, like so:
+
+```
+pcs cluster cib-push <filename>
+```
+
+Or,
+
+```
+[root@ha-web1 ~]# pcs cluster cib-push pacemaker-cib-backup.xml
+CIB updated
+[root@ha-web1 ~]# 
+```
+
+----------- 
+
+# Setup our test web service:
+
+(todo: setup a basic index.html for nginx on each node and how that what do we see when we curl each individual IP, and when we curl cluster IP).
+
+Create a custom/unique `index.html` page on each node, so we can verify through the cluster later, that which node is responding through the cluster resource, the cluster IP.
+
+
+```
+[root@ha-web1 ~]# echo "node1 - ha-web1 : nginx - It Works!" > /usr/share/nginx/html/index.html 
+```
+
+```
+[root@ha-web2 ~]# echo "node2 - ha-web2 : nginx - It Works!" > /usr/share/nginx/html/index.html 
+```
+
+```
+[root@ha-web1 ~]# systemctl enable nginx; systemctl start nginx
+Created symlink from /etc/systemd/system/multi-user.target.wants/nginx.service to /usr/lib/systemd/system/nginx.service.
+[root@ha-web1 ~]# 
+```
+
+Verify that we are able to access the web service on each node and that we see a web page from each node which uniquely identifies itself. I will use my work computer to `ping` the nodes over ICMP , and access the web services using `curl`:
+
+```
+[kamran@kworkhorse ~]$ ping -c1 ha-web1.example.com 
+PING ha-web1.example.com (192.168.124.51) 56(84) bytes of data.
+64 bytes from ha-web1.example.com (192.168.124.51): icmp_seq=1 ttl=64 time=0.681 ms
+
+--- ha-web1.example.com ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.681/0.681/0.681/0.000 ms
+[kamran@kworkhorse ~]$
+```
+
+```
+[kamran@kworkhorse ~]$ ping -c1 ha-web2.example.com 
+PING ha-web2.example.com (192.168.124.52) 56(84) bytes of data.
+64 bytes from ha-web2.example.com (192.168.124.52): icmp_seq=1 ttl=64 time=4.48 ms
+
+--- ha-web2.example.com ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 4.488/4.488/4.488/0.000 ms
+[kamran@kworkhorse ~]$ 
+```
+
+
+Ping the cluster IP and at this time it should fail - which is expected because we have not configured any cluster resource yet:
+
+```
+[kamran@kworkhorse ~]$ ping -c1 192.168.124.50
+PING 192.168.124.50 (192.168.124.50) 56(84) bytes of data.
+From 192.168.124.1 icmp_seq=1 Destination Host Unreachable
+
+--- 192.168.124.50 ping statistics ---
+1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
+
+[kamran@kworkhorse ~]$
+```
+
+
+Lets access each node's web service:
+
+```
+[kamran@kworkhorse ~]$ curl ha-web1.example.com
+node1 - ha-web1 : nginx - It Works!
+[kamran@kworkhorse ~]$ 
+```
+
+```
+[kamran@kworkhorse ~]$ curl ha-web2.example.com
+node2 - ha-web2 : nginx - It Works!
+[kamran@kworkhorse ~]$ 
+```
+
+As you can see we get a unique page from each web server. Lets see if we can access the web service over the cluster IP:
+
+```
+[kamran@kworkhorse ~]$ curl 192.168.124.50
+curl: (7) Failed to connect to 192.168.124.50 port 80: No route to host
+[kamran@kworkhorse ~]$ 
+```
+
+Great! We are almost done!
+
+
+----------
+# Add a cluster resource
+
+Finally it is time to use this cluster to setup some cluster resources ! 
+
+The objective of our excercise today is to setup a VIP (Virtual IP) `192.168.124.50` as a cluster resource, so we can use that IP to access our web service instead of accessing each web server separately. It is common sense to use an IP as VIP, which is not being used anywhere on this network. 
+
+Lets create this resource and name this resource WebVIP:
+
+```
+pcs resource create WebVIP ocf:heartbeat:IPaddr2 \
+  ip=192.168.124.50 cidr_netmask=32 op monitor interval=30s
+```
+
+Or:
+
+```
+[root@ha-web1 ~]# pcs resource create WebVIP ocf:heartbeat:IPaddr2 \
+>   ip=192.168.124.50 cidr_netmask=32 op monitor interval=30s
+[root@ha-web1 ~]#
+```
+
+If we check `pcs status`, we would see our resource:
+
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web2.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Sat Oct 29 01:01:46 2016		Last change: Sat Oct 29 01:01:40 2016 by root via cibadmin on ha-web1.example.com
+
+2 nodes and 1 resource configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web1.example.com
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+Notice our resource is started on node1, i.e. `ha-web1.example.com` 
+
+
+If we check the network interface for IP addresses on both nodes, we would notice that the cluster IP (WebVIP), is assigned to network interface on node1 i.e. ha-web1 . 
+
+```
+[root@ha-web1 ~]# ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: ens3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:56:73:ff brd ff:ff:ff:ff:ff:ff
+    inet 192.168.124.51/24 brd 192.168.124.255 scope global ens3
+       valid_lft forever preferred_lft forever
+    inet 192.168.124.50/32 brd 192.168.124.255 scope global ens3
+       valid_lft forever preferred_lft forever
+[root@ha-web1 ~]# 
+```
+
+Notice that the cluster IP is not on node2. i.e. ha-web2 .
+
+```
+[root@ha-web2 ~]# ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: ens3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:61:be:64 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.124.52/24 brd 192.168.124.255 scope global ens3
+       valid_lft forever preferred_lft forever
+[root@ha-web2 ~]# 
+```
+
+
+## Verification:
+
+Now we have cluster IP resource on running on the cluster, and is visible on one of the nodes, lets see if we can `ping` it and can access the web service through `curl`:
+
+```
+[kamran@kworkhorse ~]$ ping -c1 192.168.124.50
+PING 192.168.124.50 (192.168.124.50) 56(84) bytes of data.
+64 bytes from 192.168.124.50: icmp_seq=1 ttl=64 time=0.118 ms
+
+--- 192.168.124.50 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
+[kamran@kworkhorse ~]$
+```
+
+Good! The cluster IP `192.168.124.50` is accessible on ICMP! Lets see if we can curl it:
+
+```
+[kamran@kworkhorse ~]$ curl 192.168.124.50
+node1 - ha-web1 : nginx - It Works!
+[kamran@kworkhorse ~]$
+```
+
+Also, (since we have a DNS name against the cluster IP):
+
+```
+[kamran@kworkhorse ~]$ curl ha-web.example.com
+node1 - ha-web1 : nginx - It Works!
+[kamran@kworkhorse ~]$ 
+```
+
+Super! The web service on node1 is responding against the cluster IP! Our cluster is now alive! Its ALIIIIIIIIIIIIVE!
+
+
+
+------------
+
+# Test failover:
+
+So, someone shouted "not so fast!", and I stopped - to test fail-over.
+
+We know (quite evidently) that the cluster IP `192.168.124.50` is on node 1 right now. Lets see if it floats to node2 if node1 fails:
+
+I will pull the power plug of my virtual machine node1 .i.e. ha-web1, using the hypervisor's command.
+
+First, list of running VMs:
+```
+[root@kworkhorse ~]# virsh list
+ Id    Name                           State
+----------------------------------------------------
+ 17    ha-web2                        running
+ 18    ha-web1                        running
+```
+
+Destroy node1:
+```
+[root@kworkhorse ~]# virsh destroy ha-web1
+Domain ha-web1 destroyed
+```
+
+Check list of running VMs again - no ha-web1 found!
+```
+[root@kworkhorse ~]# virsh list
+ Id    Name                           State
+----------------------------------------------------
+ 17    ha-web2                        running
+
+[root@kworkhorse ~]# 
+```
+
+Lets ping the cluster IP again:
+
+```
+[kamran@kworkhorse ~]$ ping -c1 192.168.124.50
+PING 192.168.124.50 (192.168.124.50) 56(84) bytes of data.
+64 bytes from 192.168.124.50: icmp_seq=1 ttl=64 time=0.123 ms
+
+--- 192.168.124.50 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.123/0.123/0.123/0.000 ms
+[kamran@kworkhorse ~]$ 
+```
+
+`ping` works!
+
+```
+[kamran@kworkhorse ~]$ curl ha-web.example.com
+node2 - ha-web2 : nginx - It Works!
+[kamran@kworkhorse ~]$
+```
+`curl` works too! Notice that the response is now coming from node2 instead of node1.
+
+Super! Our little HA cluster has survived a node failure and the service is responding!
+
+
+If you want to check various components of the cluster now, I will show them to you, including logs:
+
+
+First, pcs status:
+```
+[root@ha-web2 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web2.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Sat Oct 29 01:31:59 2016		Last change: Sat Oct 29 01:01:40 2016 by root via cibadmin on ha-web1.example.com
+
+2 nodes and 1 resource configured
+
+Online: [ ha-web2.example.com ]
+OFFLINE: [ ha-web1.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web2.example.com
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+[root@ha-web2 ~]# 
+```
+
+Then, corosync status:
+```
+[root@ha-web2 ~]# pcs status corosync
+
+Membership information
+----------------------
+    Nodeid      Votes Name
+         2          1 ha-web2.example.com (local)
+[root@ha-web2 ~]# 
+```
+
+Then, System logs:
+```
+[root@ha-web2 ~]# journalctl -f
+. . .
+Oct 29 01:30:35 ha-web2.example.com corosync[1837]:  [MAIN  ] Corosync main process was not scheduled for 7634.6885 ms (threshold is 800.0000 ms). Consider token timeout increase.
+Oct 29 01:30:35 ha-web2.example.com corosync[1837]:  [TOTEM ] A processor failed, forming new configuration.
+Oct 29 01:30:35 ha-web2.example.com corosync[1837]:  [TOTEM ] A new membership (192.168.124.52:60) was formed. Members
+Oct 29 01:30:35 ha-web2.example.com corosync[1837]:  [QUORUM] Members[1]: 2
+Oct 29 01:30:35 ha-web2.example.com corosync[1837]:  [MAIN  ] Completed service synchronization, ready to provide service.
+. . .
+```
+
+Now, just for completeness sake (or fun), lets start node1 again, and see the cluster status.
+
+```
+[root@kworkhorse ~]# virsh start ha-web1
+Domain ha-web1 started
+
+[root@kworkhorse ~]# 
+```
+
+Then I connect to node1 (ha-web1) and check various cluster components:
+
+```
+[root@ha-web1 ~]# pcs status
+Error: cluster is not currently running on this node
+[root@ha-web1 ~]# 
+```
+
+What! Well, this is expected. You see we have pcsd service running on this node:
+
+```
+[root@ha-web1 ~]# systemctl status pcsd
+● pcsd.service - PCS GUI and remote configuration interface
+   Loaded: loaded (/usr/lib/systemd/system/pcsd.service; enabled; vendor preset: disabled)
+   Active: active (running) since Sat 2016-10-29 01:36:31 CEST; 1min 21s ago
+ Main PID: 542 (ruby-mri)
+    Tasks: 6 (limit: 512)
+   CGroup: /system.slice/pcsd.service
+           └─542 /usr/bin/ruby-mri /usr/lib/pcsd/pcsd > /dev/null &
+
+Oct 29 01:36:30 ha-web1.example.com systemd[1]: Starting PCS GUI and remote configuration interface...
+Oct 29 01:36:31 ha-web1.example.com systemd[1]: Started PCS GUI and remote configuration interface.
+[root@ha-web1 ~]# 
+```
+
+But we intentionally configured corosync and pacemaker to **not** start at system boot. This is what is happening. So the cluster is in degrated mode. We can bring up the cluster services on this node - manually. Like so:
+
+```
+[root@ha-web1 ~]# pcs cluster start
+Starting Cluster...
+[root@ha-web1 ~]#
+```
+
+
+Now check cluster status again. It should be up:
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web2.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Sat Oct 29 01:42:06 2016		Last change: Sat Oct 29 01:01:40 2016 by root via cibadmin on ha-web1.example.com
+
+2 nodes and 1 resource configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web2.example.com
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+Corosync also sees both nodes:
+
+```
+[root@ha-web1 ~]# pcs status corosync
+
+Membership information
+----------------------
+    Nodeid      Votes Name
+         1          1 ha-web1.example.com (local)
+         2          1 ha-web2.example.com
+[root@ha-web1 ~]# 
+```
+
+```
+[kamran@kworkhorse ~]$ curl ha-web.example.com
+node2 - ha-web2 : nginx - It Works!
+[kamran@kworkhorse ~]$ 
+```
+
+From the above verification, we see that the cluster resource (cluster IP - WebVIP) , which moved to node2 after node1's failure, continue to run on node2 even node1 has re-joined the cluster, which is OK.
+
+
+
+
+Hurray! We did it! Everything works as expected!
+
+--------
+
+# Future work:
+* Setup backup mechanisms to backup cluster configurations
+* Add a third node to increase quorum
+* Manage a service resource, such as apache/nginx, which will be started and stopped by the cluster.
+* Explain STONITH. Why it is important, and why not - at times.
+* Setup *corosync* and *pacemaker* to startup automatically on both nodes. This way the cluster will be up automatically, instead of manual intervention, even for the first time. 
