@@ -96,10 +96,10 @@ Here are the sizes (and related IP addresses) of VMs I am creating:
 As I mentioned earlier, there will be two controller nodes in HA mode. There is no internal mechanism for Kubernetes controllers to work as a cluster, so we will use a trick; which is, setup a (kind of) load balancer in front of the controller nodes. We need to decide on an IP address right now, becuase that will be used while we are creating the TLS certificates. I decided to use the IP address `10.240.0.20` to work as VIP (virtual IP / load balancer IP ) for the controller nodes.
 
 **Notes:** 
-* Kelsey's guide starts the node numbering from 0. I start them from 1, for ease of understanding.
-* The FQDN of each host is *hostname*.example.com 
-* The nodes have only one user, **root** ; password: redhat .
-* I used GUI interface to create these VMs, but you can automate this by using CLI commands.
+* Kelsey's Kubernetes guide (the one this guide uses as a reference), starts the node numbering from 0. We start them from 1 for ease of understanding.
+* The FQDN of each host is `*hostname*.example.com` 
+* The nodes have only one user, **root** ; with a password: **redhat** .
+* I used libvirt's GUI interface (virt-manager) to create these VMs, but you can automate this by using CLI commands.
 
 
 Here is a guide on how much RAM you need to assign to each type of node (etcd, controller, worker). Below I have just shown how much RAM each type of node is using, with all related processes running, so you can size your VMs accordingly.
@@ -2142,7 +2142,7 @@ rtt min/avg/max/mdev = 0.586/0.586/0.586/0.000 ms
 
 Great! It works!
 
-# Deploying the cluster add-on - DNS
+# Deploying the cluster add-on: DNS (skydns)
 
 DNS add-on is required for every Kubernetes cluster. ( I wonder why it is not part of core kubernetes!) . Without the DNS add-on the following things will not work:
 
