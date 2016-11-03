@@ -120,7 +120,7 @@ ha-web2.example.com: Already authorized
 [root@ha-web2 ~]# 
 ```
 
-**Note:**  Authenticate pcs to pcsd on nodes specified, or on all nodes configured in corosync.conf if no nodes are specified. Authorization tokens are stored in ~/.pcs/tokens ; or /var/lib/pcsd/tokens for root.
+**Note:**  The auth command authenticates `pcs` to `pcsd` (pcs daemon) on specified nodes. If no nodes are specified, then it (the `pcs` command) authenticates to `pcsd` on all nodes specified in `corosync.conf` . The authorization tokens are stored in `~/.pcs/tokens` ; or `/var/lib/pcsd/tokens` for root user.
 
 ```
 [root@ha-web1 ~]# cat /var/lib/pcsd/tokens
@@ -1280,15 +1280,510 @@ node2 - ha-web2 : nginx - It Works!
 From the above verification, we see that the cluster resource (cluster IP - WebVIP) , which moved to node2 after node1's failure, continue to run on node2 even node1 has re-joined the cluster, which is OK.
 
 
-
-
 Hurray! We did it! Everything works as expected!
+
+---------
+
+# Add a node to HA-with-Pacemaker-Corosync setup
+
+If the nodes are VM, then clone the node. Make adjustments in the following. If not a VM, setp a node from scratch using the steps described above (in the other tutorial):
+
+* /etc/hostname
+* /etc/sysconfig/network-scripts/ifcfg-ens3 (change IPADDR, HWADDR and UUID)
+* /etc/hosts *(on all nodes)* to add this new node
+
+```
+$ cat /etc/hosts
+
+127.0.0.1	localhost.localdomain	localhost
+192.168.124.51  ha-web1.example.com     ha-web1
+192.168.124.52  ha-web2.example.com     ha-web2
+192.168.124.53  ha-web3.example.com     ha-web3
+192.168.124.50  ha-web.example.com      ha-web
+```
+
+
+Remove cluster configurations:
+
+```
+rm -f /etc/corosync/corosync.conf
+
+rm -f /var/lib/pacemaker/cib/cib.xml
+```
+
+Stop corosync and pacemaker services until they are configured properly.
+
+
+Reboot the new node:
+
+```
+ # reboot
+```
+
+Since it is a clone, pcsd service would already be running. Verify:
+
+```
+[root@ha-web3 ~]# systemctl status pcsd --no-pager
+● pcsd.service - PCS GUI and remote configuration interface
+   Loaded: loaded (/usr/lib/systemd/system/pcsd.service; enabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-11-03 10:06:27 CET; 3h 45min ago
+ Main PID: 523 (ruby-mri)
+    Tasks: 4 (limit: 512)
+   CGroup: /system.slice/pcsd.service
+           └─523 /usr/bin/ruby-mri /usr/lib/pcsd/pcsd > /dev/null &
+
+Nov 03 10:06:26 ha-web3.example.com systemd[1]: Starting PCS GUI and remote configuration interface...
+Nov 03 10:06:27 ha-web3.example.com systemd[1]: Started PCS GUI and remote configuration interface.
+[root@ha-web3 ~]#
+```
+
+Also:
+
+```
+[root@ha-web1 ~]#  pcs cluster pcsd-status
+  ha-web1.example.com: Online
+  ha-web2.example.com: Online
+[root@ha-web1 ~]# 
+``` 
+
+
+If corosync and pacemaker were configured to *not* start on boot time, then the cluster will be in the stopped state. (IF you rebooted all nodes - that is).
+
+```
+[root@ha-web1 ~]#  pcs cluster status
+Error: cluster is not currently running on this node
+[root@ha-web1 ~]# 
+```
+
+
+Authorize the new node to the cluster, using node1:
+
+```
+[root@ha-web1 ~]# pcs cluster auth ha-web3.example.com 
+Username: hacluster
+Password: 
+ha-web3.example.com: Authorized
+[root@ha-web1 ~]# 
+```
+
+
+Now add the node to corosync cluster:
+```
+[root@ha-web1 ~]#  pcs cluster node add ha-web3.example.com
+Disabling SBD service...
+ha-web3.example.com: sbd disabled
+ha-web1.example.com: Corosync updated
+ha-web2.example.com: Corosync updated
+Setting up corosync...
+ha-web3.example.com: Succeeded
+Synchronizing pcsd certificates on nodes ha-web3.example.com...
+ha-web3.example.com: Success
+
+Restarting pcsd on the nodes in order to reload the certificates...
+ha-web3.example.com: Success
+[root@ha-web1 ~]#
+```
+
+The above command adds the new node to corosync.conf and also replicates/syncs it across all nodes on the cluster. You should be able to see the corosync configuration on node ha-web3:
+
+```
+[root@ha-web3 ~]# cat /etc/corosync/corosync.conf
+totem {
+    version: 2
+    secauth: off
+    cluster_name: mywebcluster
+    transport: udpu
+}
+
+nodelist {
+    node {
+        ring0_addr: ha-web1.example.com
+        nodeid: 1
+    }
+
+    node {
+        ring0_addr: ha-web2.example.com
+        nodeid: 2
+    }
+
+    node {
+        ring0_addr: ha-web3.example.com
+        nodeid: 3
+    }
+}
+
+quorum {
+    provider: corosync_votequorum
+}
+
+logging {
+    to_logfile: yes
+    logfile: /var/log/cluster/corosync.log
+    to_syslog: yes
+}
+[root@ha-web3 ~]# 
+```
+
+You should get the same from:
+
+```
+[root@ha-web3 ~]# pcs cluster corosync
+totem {
+    version: 2
+    secauth: off
+    cluster_name: mywebcluster
+    transport: udpu
+}
+
+nodelist {
+    node {
+        ring0_addr: ha-web1.example.com
+        nodeid: 1
+    }
+
+    node {
+        ring0_addr: ha-web2.example.com
+        nodeid: 2
+    }
+
+    node {
+        ring0_addr: ha-web3.example.com
+        nodeid: 3
+    }
+}
+
+quorum {
+    provider: corosync_votequorum
+}
+
+logging {
+    to_logfile: yes
+    logfile: /var/log/cluster/corosync.log
+    to_syslog: yes
+}
+[root@ha-web3 ~]# 
+```
+
+There is an interesting differnce here compare to the two node cluster we had until now. Notice that a particular configuration setting is not there ay more in the new corosync configuration. It is in the quorum section:
+
+```
+quorum {
+    provider: corosync_votequorum
+    two_node: 1
+}
+```
+
+So the `two_node: 1` setting is gone, because obviously this is no more a two-node cluster. Just now we added a third node! 
+
+
+# Start Corosync
+
+Remember, we already *setup* the cluster when in the early stages of this tutorial. We just added a node to the existing cluster. So we just need to start the cluster now - on all nodes.
+
+```
+[root@ha-web1 ~]# pcs cluster start --all
+ha-web1.example.com: Starting Cluster...
+ha-web2.example.com: Starting Cluster...
+ha-web3.example.com: Starting Cluster...
+[root@ha-web1 ~]# 
+```
+
+Great! Lets check the status of various components:
+
+# Check nodes:
+
+```
+[root@ha-web1 ~]# pcs status nodes
+Pacemaker Nodes:
+ Online: ha-web1.example.com ha-web2.example.com ha-web3.example.com
+ Standby:
+ Maintenance:
+ Offline:
+Pacemaker Remote Nodes:
+ Online:
+ Standby:
+ Maintenance:
+ Offline:
+[root@ha-web1 ~]# 
+```
+
+
+
+# Check cluster status:
+```
+[root@ha-web1 ~]# pcs cluster status
+Cluster Status:
+ Stack: corosync
+ Current DC: ha-web1.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+ Last updated: Thu Nov  3 15:00:46 2016		Last change: Thu Nov  3 14:58:10 2016 by hacluster via crmd on ha-web1.example.com
+ 3 nodes and 1 resource configured
+
+PCSD Status:
+  ha-web1.example.com: Online
+  ha-web3.example.com: Online
+  ha-web2.example.com: Online
+[root@ha-web1 ~]# 
+```
+
+```
+[root@ha-web1 ~]# pcs status corosync
+
+Membership information
+----------------------
+    Nodeid      Votes Name
+         1          1 ha-web1.example.com (local)
+         2          1 ha-web2.example.com
+         3          1 ha-web3.example.com
+[root@ha-web1 ~]# 
+```
+
+# Check quorum:
+```
+[root@ha-web1 ~]# pcs status quorum
+Quorum information
+------------------
+Date:             Thu Nov  3 15:05:06 2016
+Quorum provider:  corosync_votequorum
+Nodes:            3
+Node ID:          1
+Ring ID:          1/132
+Quorate:          Yes
+
+Votequorum information
+----------------------
+Expected votes:   3
+Highest expected: 3
+Total votes:      3
+Quorum:           2  
+Flags:            Quorate 
+
+Membership information
+----------------------
+    Nodeid      Votes    Qdevice Name
+         1          1         NR ha-web1.example.com (local)
+         2          1         NR ha-web2.example.com
+         3          1         NR ha-web3.example.com
+
+[root@ha-web1 ~]# 
+```
+
+# Check if pacemaker is active:
+
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web1.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Thu Nov  3 15:06:44 2016		Last change: Thu Nov  3 14:58:10 2016 by hacluster via crmd on ha-web1.example.com
+
+3 nodes and 1 resource configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ha-web3.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web1.example.com
+
+Daemon Status:
+  corosync: active/disabled
+  pacemaker: active/disabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+Notice that Daemon status says `pacemaker: active/disabled` , which means that pacemaker is running, but is not configured to start up at boot time.
+
+Also notice that DC (*Designated Co-ordinator*) is `ha-web1` right now.
+
+
+
+## Check corosync and pacemaker services on all nodes:
+
+These two should be **up** on all nodes:
+
+```
+[kamran@kworkhorse ~]$ for node in ha-web1 ha-web2 ha-web3; do echo $node; ssh root@${node} systemctl status  corosync| egrep  -w "Loaded:|Active:"; done
+ha-web1
+   Loaded: loaded (/usr/lib/systemd/system/corosync.service; disabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-11-03 14:58:08 CET; 14min ago
+ha-web2
+   Loaded: loaded (/usr/lib/systemd/system/corosync.service; disabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-11-03 14:58:08 CET; 14min ago
+ha-web3
+   Loaded: loaded (/usr/lib/systemd/system/corosync.service; disabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-11-03 14:58:08 CET; 14min ago
+[kamran@kworkhorse ~]$ 
+```
+
+```
+[kamran@kworkhorse ~]$ for node in ha-web1 ha-web2 ha-web3; do echo $node; ssh root@${node} systemctl status  pacemaker| egrep  -w "Loaded:|Active:"; done
+ha-web1
+   Loaded: loaded (/usr/lib/systemd/system/pacemaker.service; disabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-11-03 14:58:08 CET; 14min ago
+ha-web2
+   Loaded: loaded (/usr/lib/systemd/system/pacemaker.service; disabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-11-03 14:58:08 CET; 14min ago
+ha-web3
+   Loaded: loaded (/usr/lib/systemd/system/pacemaker.service; disabled; vendor preset: disabled)
+   Active: active (running) since Thu 2016-11-03 14:58:08 CET; 14min ago
+[kamran@kworkhorse ~]$ 
+```
+
+## Check which resources are available through cluster:
+
+```
+[root@ha-web1 ~]# pcs status resources
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web1.example.com
+[root@ha-web1 ~]#
+```
+
+Or:
+
+```
+[root@ha-web1 ~]# pcs status resources --full
+ Resource: WebVIP (class=ocf provider=heartbeat type=IPaddr2)
+  Attributes: ip=192.168.124.50 cidr_netmask=32
+  Operations: start interval=0s timeout=20s (WebVIP-start-interval-0s)
+              stop interval=0s timeout=20s (WebVIP-stop-interval-0s)
+              monitor interval=30s (WebVIP-monitor-interval-30s)
+[root@ha-web1 ~]# 
+```
+
+## Check configuration validity:
+
+```
+[root@ha-web1 ~]# crm_verify -L -V
+[root@ha-web1 ~]# 
+```
+
+No output from this command means the configuration has no errors and is valid.
+
+
+**Note:** We still don't have STONITH, we disabled it when we configured the two node cluster.
+
+
+
+# Setup corosync and pacemaker to start automatically on system boot:
+
+In a data center environment, it is better for nodes to come online and bring up their part of cluster stack instead of waiting for the operator to bring up the cluster by manullay issuing `pcs cluster start --all` . To do that we use pcs to enable these services:
+
+```
+[root@ha-web1 ~]# pcs cluster enable --all
+ha-web1.example.com: Cluster Enabled
+ha-web2.example.com: Cluster Enabled
+ha-web3.example.com: Cluster Enabled
+[root@ha-web1 ~]# 
+```
+
+Now, when we reboot nodes, they will come up/online automatically instead of waiting for someone to bring up the cluster.
+
+
+# Test of all nodes being rebooted:
+
+```
+[root@kworkhorse ~]# virsh list 
+ Id    Name                           State
+----------------------------------------------------
+ 1     ha-web3                        running
+ 2     ha-web1                        running
+ 3     ha-web2                        running
+
+[root@kworkhorse ~]# 
+```
+
+```
+[root@kworkhorse ~]# virsh shutdown ha-web1
+Domain ha-web1 is being shutdown
+
+[root@kworkhorse ~]# virsh shutdown ha-web2
+Domain ha-web2 is being shutdown
+
+[root@kworkhorse ~]# virsh shutdown ha-web3
+Domain ha-web3 is being shutdown
+
+[root@kworkhorse ~]#
+```
+
+Notice no VMs running now:
+```
+[root@kworkhorse ~]# virsh list 
+ Id    Name                           State
+----------------------------------------------------
+
+[root@kworkhorse ~]# 
+```
+
+Lets start the VMs and see if they bring up the cluster:
+```
+[root@kworkhorse ~]# virsh start ha-web1
+Domain ha-web1 started
+
+[root@kworkhorse ~]# virsh start ha-web2
+Domain ha-web2 started
+
+[root@kworkhorse ~]# virsh start ha-web3
+Domain ha-web3 started
+
+[root@kworkhorse ~]# 
+```
+
+
+Lets logon to one node and check the cluster status:
+
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web3.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Thu Nov  3 15:37:58 2016		Last change: Thu Nov  3 15:27:54 2016 by hacluster via crmd on ha-web1.example.com
+
+3 nodes and 1 resource configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ha-web3.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web1.example.com
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+Hurray! The cluster is online! 
+
+Final test, see if the VIP is available and the services are respoding on the VIP:
+
+```
+[kamran@kworkhorse ~]$ ping -c 1 ha-web.example.com
+PING ha-web.example.com (192.168.124.50) 56(84) bytes of data.
+64 bytes from ha-web.example.com (192.168.124.50): icmp_seq=1 ttl=64 time=0.106 ms
+
+--- ha-web.example.com ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.106/0.106/0.106/0.000 ms
+[kamran@kworkhorse ~]$ 
+```
+Ping works!
+
+
+```
+[kamran@kworkhorse ~]$ curl ha-web.example.com
+node1 - ha-web1 : nginx - It Works!
+[kamran@kworkhorse ~]$ 
+```
+Curl works and gets us the web page through the VIP! 
+
+So, it works!
+
 
 --------
 
 # Future work:
 * Setup backup mechanisms to backup cluster configurations
-* Add a third node to increase quorum
+* (Done)Add a third node to increase quorum
 * Manage a service resource, such as apache/nginx, which will be started and stopped by the cluster.
 * Explain STONITH. Why it is important, and why not - at times.
-* Setup *corosync* and *pacemaker* to startup automatically on both nodes. This way the cluster will be up automatically, instead of manual intervention, even for the first time. 
+* (Done) Setup *corosync* and *pacemaker* to startup automatically on both nodes. This way the cluster will be up automatically, instead of manual intervention, even for the first time. 
