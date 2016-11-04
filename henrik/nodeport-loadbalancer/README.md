@@ -1,3 +1,7 @@
+**Update:** This project is now part of [praqma/k8s-cloud-loadbalancer](https://github.com/Praqma/k8s-cloud-loadbalancer). All future work will be done over there.
+
+
+
 # NodePort Loadbalancer
 ## Introduction
 This folder contains an example of how to update a Apache webserver to reflect services running in a Kubernetes Cluster by loadbalancing them. It will create a loadbalancer for each exposed service with endpoints.
