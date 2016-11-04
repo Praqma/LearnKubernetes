@@ -1779,6 +1779,86 @@ Curl works and gets us the web page through the VIP!
 So, it works!
 
 
+# Important notes about cluster startup, Quorum and Resource startup:
+
+Note that when you have three node cluster, then the required quorum will be **2/3** . i.e. at least two out of three nodes must be alive, and running the cluster stack. If you shutdown all nodes, and bring up only one, the quorum will **NOT** be complete and the cluster resources **will not** start.
+
+In the example below, I started only one node. Notice it says **`partition WITHOUT quorum`** . And it also says that the resource **WebVIP** is **Stopped**. 
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web1.example.com (version 1.1.15-1.fc24-e174ec8) - partition WITHOUT quorum
+Last updated: Fri Nov  4 11:12:59 2016		Last change: Fri Nov  4 11:11:07 2016 by hacluster via crmd on ha-web1.example.com
+
+3 nodes and 1 resource configured
+
+Online: [ ha-web1.example.com ]
+OFFLINE: [ ha-web2.example.com ha-web3.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Stopped
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+As soon as I start on more cluster node, the cluster has a quorum , and the resource is started. See below:
+
+```
+[root@kworkhorse ~]# virsh start ha-web2
+Domain ha-web2 started
+
+[root@kworkhorse ~]# 
+```
+
+```
+[root@kworkhorse ~]# virsh list
+ Id    Name                           State
+----------------------------------------------------
+ 8     ha-web1                        running
+ 10    ha-web2                        running
+
+[root@kworkhorse ~]# 
+```
+
+
+Check cluster status now:
+
+```
+[root@ha-web1 ~]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web1.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Fri Nov  4 11:18:37 2016		Last change: Fri Nov  4 11:11:07 2016 by hacluster via crmd on ha-web1.example.com
+
+3 nodes and 1 resource configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ]
+OFFLINE: [ ha-web3.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web1.example.com
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@ha-web1 ~]# 
+```
+
+Notice it says **partition with quorum** , and also the resource **WebVIP** is now **Started** on DC (`ha-web1.example.com`) .
+
+
+
+
+
+
 --------
 
 # Future work:
