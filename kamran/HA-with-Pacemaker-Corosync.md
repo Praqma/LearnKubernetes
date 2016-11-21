@@ -1854,6 +1854,19 @@ Daemon Status:
 
 Notice it says **partition with quorum** , and also the resource **WebVIP** is now **Started** on DC (`ha-web1.example.com`) .
 
+--------
+
+# Adding more Resources/Services for the HA cluster to manage (Grouping and Order)
+
+So far we have a resource *WebVIP* which is managed by our HA cluster. Lets add some purpose for this cluster's existence. Until now we had Apache service running on all cluster nodes at all times. Only that web server responded to our queries, which had the VIP. However, if we want the cluster to start the web service only on the node which has the VIP and keep it stopped on the other nodes, then we do it by grouping the resources together. 
+
+A web service is just used here as an example. Normally a web service is a stateless service, and we do not have a cluster of three nodes with only one web service running on the active/master/leader node. Instead, we normally use such a cluster to serve services which can only be run on active node of a cluster at any given time, especially there is a chance of data corruption, when this service is run on multiple cluster nodes. Think about MySQL DB, NFS, etc. These services need a place on the file system to read write data and running them on multiple nodes without proper protection/setup normally ends up in data corruption. e.g. By default, MySQL needs write access to `/var/lib/mysql` . If mysql is running on one cluster node, and that node fails, mysql will move to the other node, ideally with the VIP. But what about the `/var/lib/mysql` directory it lost on the failed node? It needs a mechanism to have the `/var/lib/mysql` synced across the cluster nodes, and as soon as the active node fails, the service is started on a healthy node, and it finds the same `/var/lib/mysql` on the second node. This block level synchronization between multiple nodes, over the network is done by DRBD. So in MySQL's example we need a VIP, a directory protected by DRBD and MySQL service running together only on the active node, and not on any other node. This calls for some service grouping and some ordering. e.g. First the VIP will move to the healthy node, then DRBD will start, and only when these two are active, then MySQL will start - on the same active node. 
+
+
+In this section,  I will use a simple web service behind a VIP to show how we can add cluster resources, and do grouping and ordering. We would like to see the VIP to float to a healthy cluster node, when the active node dies, and when that resource is running on the new node, only then to bring up the web service. 
+
+Before we begin, it is important to note (and make sure) that the resources (services) which are to be managed by the HA cluster, should not be set to start on the node/system boot time.
+
 
 
 
