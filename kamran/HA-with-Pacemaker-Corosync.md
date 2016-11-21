@@ -1871,6 +1871,113 @@ Before we begin, it is important to note (and make sure) that the resources (ser
 
 
 
+## Add HAproxy as a new resource:
+
+References: 
+* [http://robert.penz.name/386/howto-setup-a-haproxy-as-fault-tolerant-high-available-load-balancer-for-multiple-caching-web-proxies-on-rhelcentossl/](http://robert.penz.name/386/howto-setup-a-haproxy-as-fault-tolerant-high-available-load-balancer-for-multiple-caching-web-proxies-on-rhelcentossl/)
+* [https://www.digitalocean.com/community/tutorials/how-to-create-a-high-availability-haproxy-setup-with-corosync-pacemaker-and-floating-ips-on-ubuntu-14-04](https://www.digitalocean.com/community/tutorials/how-to-create-a-high-availability-haproxy-setup-with-corosync-pacemaker-and-floating-ips-on-ubuntu-14-04)
+
+
+
+On all LB nodes:
+
+```
+yum -y install haproxy 
+cd /usr/lib/ocf/resource.d/heartbeat 
+curl -O https://raw.githubusercontent.com/thisismitch/cluster-agents/master/haproxy
+chmod +x haproxy
+```
+
+
+
+On one of the nodes:
+```
+pcs resource create HAProxy ocf:heartbeat:haproxy  \
+      conffile=/etc/haproxy/haproxy.cfg \
+      op monitor interval=1min
+```
+
+
+```
+[root@ha-web1 pacemaker]# pcs resource create HAProxy ocf:heartbeat:haproxy  \
+>       conffile=/etc/haproxy/haproxy.cfg \
+>       op monitor interval=1min
+
+```
+
+When you run the above command, you get the following status. Notice HAProxy has started on some other node. That is because by default pacemaker tries to spread cluster resources evenly on all cluster nodes. This is expected. 
+```
+[root@ha-web1 pacemaker]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web3.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Mon Nov 21 14:08:19 2016		Last change: Mon Nov 21 14:08:14 2016 by root via cibadmin on ha-web1.example.com
+
+3 nodes and 2 resources configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ha-web3.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web1.example.com
+ HAProxy	(ocf::heartbeat:haproxy):	Started ha-web2.example.com
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@ha-web1 pacemaker]# 
+```
+
+
+Lets ensure that the HAProxy service is colocated with cluster VIP, and that it starts after the VIP is acquired.
+
+```
+pcs constraint colocation add HAProxy WebVIP INFINITY
+pcs constraint order WebVIP then HAProxy
+``` 
+
+Like so:
+
+```
+[root@ha-web1 pacemaker]# pcs constraint colocation add HAProxy WebVIP INFINITY
+
+
+[root@ha-web1 pacemaker]# pcs constraint order WebVIP then HAProxy
+Adding WebVIP HAProxy (kind: Mandatory) (Options: first-action=start then-action=start)
+[root@ha-web1 pacemaker]# 
+```
+
+
+If you do check pcs status now, you will see them both started on node 1.
+
+```
+[root@ha-web1 pacemaker]# pcs status
+Cluster name: mywebcluster
+Stack: corosync
+Current DC: ha-web3.example.com (version 1.1.15-1.fc24-e174ec8) - partition with quorum
+Last updated: Mon Nov 21 14:13:03 2016		Last change: Mon Nov 21 14:12:33 2016 by root via cibadmin on ha-web1.example.com
+
+3 nodes and 2 resources configured
+
+Online: [ ha-web1.example.com ha-web2.example.com ha-web3.example.com ]
+
+Full list of resources:
+
+ WebVIP	(ocf::heartbeat:IPaddr2):	Started ha-web1.example.com
+ HAProxy	(ocf::heartbeat:haproxy):	Started ha-web1.example.com
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@ha-web1 pacemaker]# 
+```
+
+Hurray!
+
+
+
 
 --------
 
