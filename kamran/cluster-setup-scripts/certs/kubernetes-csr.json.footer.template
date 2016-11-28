@@ -1,0 +1,17 @@
+    "localhost",
+    "127.0.0.1"
+  ],
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "COUNTRY",
+      "L": "CITY",
+      "O": "Kubernetes",
+      "OU": "Cluster",
+      "ST": "STATE"
+    }
+  ]
+}

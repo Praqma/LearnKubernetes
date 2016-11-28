@@ -1,0 +1,8 @@
+*.tar*
+*.tgz
+*.zip
+
+# Ignore kubernetes binaries
+controllers/kube*
+workers/kube*
+
