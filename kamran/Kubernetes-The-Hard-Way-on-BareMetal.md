@@ -87,11 +87,15 @@ Here are the sizes (and related IP addresses) of VMs I am creating:
 
 * etcd1		512 MB RAM	4 GB disk	10.240.0.11/24
 * etcd2		512 MB RAM	4 GB disk	10.240.0.12/24
+* etcd3		512 MB RAM	4 GB disk	10.240.0.13/24
 * controller1	512 MB RAM	4 GB disk	10.240.0.21/24
 * controller2	512 MB RAM	4 GB disk	10.240.0.22/24
-* worker1	1.5 GB RAM	20 GB disk	10.240.0.31/24
-* worker2	1.5 GB RAM	20 GB disk	10.240.0.32/24
-* lb		512 MB RAM	4 GB disk	10.240.0.200/24
+* controller	- 		- 		10.240.0.20/24
+* worker1	1024 GB RAM	20 GB disk	10.240.0.31/24
+* worker2	1024 GB RAM	20 GB disk	10.240.0.32/24
+* lb1		512 MB RAM	4 GB disk	10.240.0.41/24
+* lb2		512 MB RAM	4 GB disk	10.240.0.42/24
+* lb		- 		- 		10.240.0.40/24
 
 As I mentioned earlier, there will be two controller nodes in HA mode. There is no internal mechanism for Kubernetes controllers to work as a cluster, so we will use a trick; which is, setup a (kind of) load balancer in front of the controller nodes. We need to decide on an IP address right now, becuase that will be used while we are creating the TLS certificates. I decided to use the IP address `10.240.0.20` to work as VIP (virtual IP / load balancer IP ) for the controller nodes.
 
@@ -100,6 +104,8 @@ As I mentioned earlier, there will be two controller nodes in HA mode. There is 
 * The FQDN of each host is `*hostname*.example.com` 
 * The nodes have only one user, **root** ; with a password: **redhat** .
 * I used libvirt's GUI interface (virt-manager) to create these VMs, but you can automate this by using CLI commands.
+* Though the sizes of the disks listed above is bare minimum, for testing; you should keep in mind that etcd creates large .wal files in `/var/lib/etcd/member/*` and controller and worker nodes generate a lot of logs, which will quickly fill up your v-disks. So either use large virtual disks, (if your host has enough capacity), or, setup cleanup mechanisms to free up disks.
+* Ideally you should setup large v-disks, (say an additional 1 or 2 GB for each node), and have a large swap partition. Disk is cheap and memory is expensive. Even the test cluster can be stressed because of whatever experiments you want to conduct on it, and swapping *will* happen. Large swap is better then having oom_killer getting activated and killing random processes on your nodes.
 
 
 Here is a guide on how much RAM you need to assign to each type of node (etcd, controller, worker). Below I have just shown how much RAM each type of node is using, with all related processes running, so you can size your VMs accordingly.
