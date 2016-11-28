@@ -1,7 +1,0 @@
-KUBE_API_ADDRESS="--insecure-bind-address=0.0.0.0"
-# KUBE_ETCD_SERVERS="--etcd-servers=http://127.0.0.1:2379"
-KUBE_ETCD_SERVERS="--etcd-servers=http://MASTERIP:2379"
-KUBE_SERVICE_ADDRESSES="--service-cluster-ip-range=CLUSTER_NETWORK"
-#KUBE_ADMISSION_CONTROL="--admission-control=NamespaceLifecycle,NamespaceExists,LimitRanger,ServiceAccount,SecurityContextDeny,ResourceQuota"
-KUBE_ADMISSION_CONTROL="--admission-control=NamespaceLifecycle,NamespaceExists,LimitRanger,SecurityContextDeny,ResourceQuota"
-KUBE_API_ARGS=""

@@ -1,7 +1,0 @@
-{
-  "Network": "FLANNEL_NETWORK",
-  "SubnetLen": 24,
-  "Backend": {
-    "Type": "vxlan"
-  }
-}
