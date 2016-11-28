@@ -778,6 +778,21 @@ error #1: dial tcp 127.0.0.1:4001: getsockopt: connection refused
 **Note:** When there is only one node, the etcd cluster will show up as unavailable or misconfigured.
 
 
+Also, something to watchout for. Remember that in this guide, I am using self signed certificates. So if you run the commend `etcdctl` *without* the `--ca-file` , you will see that the cluster members are unreachable, and also x509 certificate errors. 
+```
+[root@etcd1 ~]# etcdctl cluster-health
+failed to check the health of member 92db4e3662f629ca on https://10.240.0.11:2379: Get https://10.240.0.11:2379/health: x509: certificate signed by unknown authority
+member 92db4e3662f629ca is unreachable: [https://10.240.0.11:2379] are all unreachable
+failed to check the health of member ad2c168ac133f225 on https://10.240.0.13:2379: Get https://10.240.0.13:2379/health: x509: certificate signed by unknown authority
+member ad2c168ac133f225 is unreachable: [https://10.240.0.13:2379] are all unreachable
+failed to check the health of member cbb8d1414f397ad4 on https://10.240.0.12:2379: Get https://10.240.0.12:2379/health: x509: certificate signed by unknown authority
+member cbb8d1414f397ad4 is unreachable: [https://10.240.0.12:2379] are all unreachable
+cluster is unhealthy
+[root@etcd1 ~]# 
+```
+
+
+
 ## Verify:
 
 After executing all the steps on etcd2 too, I have the following status of services on etcd2:
