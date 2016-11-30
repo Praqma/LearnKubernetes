@@ -13,29 +13,32 @@ Install a single node, get it's kickstart file. Adjust file and create multiple 
 
 ```
 
-Start a docker container exposing port on port 80 on work computer, and serve the kickstart-files directory.
 
+# Serve Fedora DVD and the kickstart files, over HTTPD:
 
-
-# Serve Fedora DVD and also kickstarts and serve over HTTPD:
-Cannot use ISO mounted over loop , as I also need kickstarts to be present in the same directory structure.
-
-Location `/home/cdimages/Fedora-Server-23-x86_64` is a directory on host which contains extracted contents of the Fedora DVD ISO.
+First mount the Fedora ISO on a mount point.
 
 ```
-[root@kworkhorse cdimages]# mkdir Fedora-Server-24-x86_64/kickstart
+[root@kworkhorse cdimages]# mount -o loop /home/cdimages/Fedora-Server-dvd-x86_64-24-1.2.iso  /mnt/cdrom/
+mount: /dev/loop2 is write-protected, mounting read-only
+[root@kworkhorse cdimages]#
+```
 
-[root@kworkhorse cdimages]# chown kamran:kamran /home/cdimages/Fedora-Server-24-x86_64 -R
-
-
-[kamran@kworkhorse kickstart-files]$ cp test.ks /home/cdimages/Fedora-Server-24-x86_64/kickstart/
-
-
-[kamran@kworkhorse kickstart-files]$ docker run -v /home/cdimages/Fedora-Server-24-x86_64/:/usr/local/apache2/htdocs/  -p 80:80 -d httpd
-3097cc51eaf978631dc2f216a540ef758d4bbca5bd751846fb7a012c2c8dcc04
-[kamran@kworkhorse kickstart-files]$ 
+Start a docker container exposing port 80 on work computer. Serve cdrom and kickstart  directories.
 
 ```
+[kamran@kworkhorse cluster-setup-scripts]$ docker run -v /mnt/cdrom:/usr/local/apache2/htdocs/cdrom   -v $(pwd)/kickstart:/usr/local/apache2/htdocs/kickstart  -p 80:80 -d httpd
+bc90d48d31aca8393877af160838dd12fc44b9931d6edc22c744ebe07be3c45f
+
+
+[kamran@kworkhorse cluster-setup-scripts]$ docker ps
+CONTAINER ID        IMAGE               COMMAND              CREATED             STATUS              PORTS                NAMES
+bc90d48d31ac        httpd               "httpd-foreground"   7 seconds ago       Up 6 seconds        0.0.0.0:80->80/tcp   condescending_brattain
+[kamran@kworkhorse cluster-setup-scripts]$ 
+```
+
+
+
 
 
 # Virt-install commands:

@@ -1,3 +1,5 @@
+# https://docs.fedoraproject.org/en-US/Fedora/24/html/Installation_Guide/appe-kickstart-syntax-reference.html
+
 #version=DEVEL
 
 # System authorization information
@@ -42,8 +44,9 @@ rootpw --iscrypted $6$a.26ywQsgJJ.ben6$NhB.p.q3wN6e2YzixvmnzFUa6hbPllMkQeH64QopC
 sshkey --username=root "ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAx+5TIvYxBryI9d3DjvAeDv4q8xycNbXAAmfOIwhXL0D7So67MpmnQavwHaE/dVsGzP/9XMcidOYl7xBK0aN0fozApThWHaeKpWuJC2w4qE0ijD6tCAbnA7/Wach1rEmGVtRKo5B5lpPXuTedoixM/St/T46wnLFIwsDdFOTMyk9QHRtQ+uJAKv/lkuimMZjDRWeJE5ggwR4SNsc306R9ArnDBdj9HJ3xeUb5rqiBCe1qV3a5k8MpjsaIgG8KPx5dvXRhOTFE4ueh+2wLMy6ydy68NU5kltBtxqBA8CYbEyYmUL/cqRdx6ZVkL8AT5Pv44e2JRnN3kE70HJADfoDX5w== kamran@wbitt.com"
 
 # System services
-services --enabled="chronyd" 
-services --disabled="firewalld"
+# ntp ?
+services --enabled=chronyd,ntpd,sshd   --disabled=firewalld
+# services --disabled=firewalld
 
 # System timezone
 timezone Europe/Oslo --ntpservers=0.fedora.pool.ntp.org
@@ -84,6 +87,7 @@ less
 logrotate
 lsof
 net-tools
+ntp
 openssl
 openssh-clients
 python
