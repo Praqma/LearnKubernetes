@@ -109,8 +109,8 @@ function getLibvirtNetworkState() {
 
 function checkKickstart() {
   # Need to make sure that kickstart directory exists inside the parent directory.
-  # Also it needs to have a kickstart-template.ks file in it as a minimum.
-  if [ -f ../kickstart/kickstart-template.ks ] ; then
+  # Also it needs to have a kickstart.template file in it as a minimum.
+  if [ -f ../kickstart/kickstart.template ] ; then
     return 0
   else
     return 1
@@ -140,7 +140,7 @@ function generateKickstartNode() {
 
   if [ checkKickstart ] ; then
     local KS_DIRECTORY=../kickstart
-    local KS_TEMPLATE=${KS_DIRECTORY}/kickstart-template.ks
+    local KS_TEMPLATE=${KS_DIRECTORY}/kickstart.template
     sed -e "s/NODE_IP/${NODE_IP}/" \
         -e "s/NODE_NETMASK/${NODE_NETMASK}/" \
         -e "s/NODE_FQDN/${NODE_FQDN}/" \
