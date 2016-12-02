@@ -27,6 +27,12 @@ Test it by writing traefik-ui.local in your browser!
 ## Deploy another service - hello world with Nginx!
 The last part is running through the same concept for a "real" service, here Nginx.
 
+It is assumed that you are runnning a service called nginx here. Lets create that one: 
+```
+kubectl run nginx --image=nginx --replicas=2 --port=80
+```
+Then we create the parts that route to this service:
+
 ```
 kubectl create -f nginx-svc.yml
 kubectl create -f nginx-ing.yml
