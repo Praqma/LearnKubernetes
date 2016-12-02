@@ -160,6 +160,7 @@ function getFirstThreeOctectsOfIP() {
 function generateKickstartAll() {
   # receive THREE_OCTETS as $1 
   # receive NETWORK_GATEWAY_IP as $2
+  # receive NETWORK_MASK as $3
   local THREE_OCTETS=$1
   local NETWORK_GATEWAY_IP=$2
   local NETWORK_MASK=$3
@@ -168,9 +169,78 @@ function generateKickstartAll() {
 
   if [ checkHostsFile ] ; then
     # Here we generate kickstart files,
-    for node in $(grep "$THREE_OCTETS" ../hosts | grep -v \^# | awk '{print $2}'); do
-      echo "generateKickstartNode $node $NETWORK_GATEWAY_IP $NETWORK__MASK"
+    # ignore lines with '-' in them
+    for node in $(grep "$THREE_OCTETS" ../hosts | egrep -v "\^#|\-" | awk '{print $2}'); do
+      # list of parametes passed to generateKickstartNode are:
+      # Node FQDN , Network Gateway IP, Network Mask 
+      echolog "Running: generateKickstartNode $node $NETWORK_GATEWAY_IP $NETWORK_MASK"
+      generateKickstartNode $node $NETWORK_GATEWAY_IP $NETWORK_MASK
     done
+  else
+    echolog "Hosts file could not be read. Something is wrong."
   fi
 }
 
+function createVM() {
+  # This function creates the actul VM
+  local NODE_NAME=$1
+  local VM_DISK_DIRECTORY=$2
+  local VM_NETWORK_NAME=$3
+  local HTTP_BASE_URL=$4
+  local LIBVIRT_CONNECTION=$5
+
+  local VM_RAM=$(getNodeRAM ${NODE_NAME})
+  local VM_DISK=$(getNodeDisk ${NODE_NAME})
+  local INSTALL_TIME_RAM=1280
+
+  virt-install --connect ${LIBVIRT_CONNECTION} -n ${NODE_NAME} --description "$NODE_NAME" --hvm \
+       --cpu host --os-type Linux  --os-variant fedora22  \
+      --ram $INSTALL_TIME_RAM  --vcpus 1  --features acpi=on,apic=on  --clock offset=localtime  \
+      --disk path=${VM_DISK_DIRECTORY}/${NODE_NAME}.qcow2,bus=virtio,size=${VM_DISK}  \
+      --network network=${VM_NETWORK_NAME}  \
+      --location ${HTTP_BASE_URL}/cdrom --extra-args "ks=${HTTP_BASE_URL}/kickstart/${NODE_NAME}.ks" \
+      --noreboot
+
+  virt-xml --connect ${LIBVIRT_CONNECTION}  ${NODE_NAME} --edit --memory ${VM_RAM},maxmemory=${VM_RAM}
+
+}
+
+function createVMAll() {
+  # This function creates the VMs by calling another function 'createVM' 
+
+  # receive THREE_OCTETS as $1 to create list of nodes from hosts file.
+  # receive VM_DISK_DIRECTORY as $2
+  # receive VM Network Name as $3
+  # HTTP_BASE_URL as $4
+  
+  local THREE_OCTETS=$1
+  local VM_DISK_DIRECTORY=$2
+  local VM_NETWORK_NAME=$3
+  local HTTP_BASE_URL=$4
+  local LIBVIRT_CONNECTION=$5
+
+  # This creates VMs for all nodes
+
+  
+  # echo "THREE_OCTETS ====== ${THREE_OCTETS}"
+  # echo "VM_DISK_DIRECTORY ========= ${VM_DISK_DIRECTORY} "
+  # echo "VM_NETWORK_NAME  ========== ${VM_NETWORK_NAME} "
+  # echo "HTTP_BASE_URL ======== ${HTTP_BASE_URL}"
+  # echo "LIBVIRT_CONNECTION ======== ${LIBVIRT_CONNECTION}"
+
+  if [ checkHostsFile ] ; then
+    # Here we use the generated kickstart files, to create VMs.
+    # ignore lines with '-' in them
+    for node in $(grep "$THREE_OCTETS" ../hosts | egrep -v "\^#|\-" | awk '{print $2}'); do
+      # list of parametes passed to generateKickstartNode are:
+      # Node FQDN , Network Gateway IP, Network Mask
+      echolog "Calling: createVM $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}"
+      createVM  $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION}
+
+    done
+  else
+    echolog "Hosts file could not be read. Something is wrong."
+  fi
+ 
+ 
+}
