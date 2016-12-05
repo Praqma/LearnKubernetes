@@ -146,6 +146,17 @@ fi
 
 # checkKickstart
 
+# Get current user's public key. This is used in the kickstart file.
+if [ getUserPublicKey ] ; then
+  USER_PUBLIC_KEY=$(getUserPublicKey)
+  echolog "Found current user's RSA key as: $(echo $USER_PUBLIC_KEY | cut -c -20 ) ..."
+else
+  echolog "Could not find public key (of the RSA key-pair) for the current user $USER in ~/.ssh/id_rsa.pub  . Please generate a key-pair for current user, using 'ssh-keygen -t rsa' . Exiting ... "
+  my_exit 1
+fi
+
+
+
 echo
 echolog "Sanity checks complete. Proceeding to execute main program ..."
 echo
@@ -190,6 +201,7 @@ LIBVIRT_NETWORK_MASK=$(getLibvirtNetworkMask $LIBVIRT_NETWORK_NAME)
 INSTALL_TIME_RAM=1280
 
 
+
 #
 #
 ###############  END - Set system variables #####################
@@ -200,12 +212,12 @@ INSTALL_TIME_RAM=1280
 #
 #
 
-getNodeRAM controller.example.com
-getNodeDisk controller1.example.com
+# getNodeRAM controller.example.com
+# getNodeDisk controller1.example.com
 
 THREE_OCTETS=$(getFirstThreeOctectsOfIP ${LIBVIRT_NETWORK_IP})
 
-generateKickstartAll ${THREE_OCTETS} ${LIBVIRT_NETWORK_IP} ${LIBVIRT_NETWORK_MASK}
+generateKickstartAll ${THREE_OCTETS} ${LIBVIRT_NETWORK_IP} ${LIBVIRT_NETWORK_MASK} ${USER_PUBLIC_KEY}
 
 
 echo "Running Main: createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}"

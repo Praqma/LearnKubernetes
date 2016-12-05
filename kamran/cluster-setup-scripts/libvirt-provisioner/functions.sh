@@ -134,6 +134,7 @@ function generateKickstartNode() {
   local NODE_FQDN=$1
   local NODE_GATEWAY_IP=$2
   local NODE_NETMASK=$3
+  local USER_PUBLIC_KEY=$4
 
   local NODE_IP=$(getNodeIP $NODE_FQDN)
   local NODE_DNS=$NODE_GATEWAY_IP
@@ -146,6 +147,7 @@ function generateKickstartNode() {
         -e "s/NODE_FQDN/${NODE_FQDN}/" \
         -e "s/NODE_GATEWAY/${NODE_GATEWAY_IP}/" \
         -e "s/NODE_DNS/${NODE_DNS}/" \
+        -e "s/USER_PUBLIC_KEY/${USER_PUBLIC_KEY}/" \
       ${KS_TEMPLATE} > ${KS_DIRECTORY}/${NODE_FQDN}.ks 
   else
     echo "Kickstart-Directory-or-File-Problem."
@@ -201,6 +203,7 @@ function createVM() {
       --location ${HTTP_BASE_URL}/cdrom --extra-args "ks=${HTTP_BASE_URL}/kickstart/${NODE_NAME}.ks" \
       --noreboot
 
+  echo "Reducing the VM ${NODE_NAME} RAM to ${VM_RAM} ..."  
   virt-xml --connect ${LIBVIRT_CONNECTION}  ${NODE_NAME} --edit --memory ${VM_RAM},maxmemory=${VM_RAM}
 
 }
@@ -242,5 +245,21 @@ function createVMAll() {
     echolog "Hosts file could not be read. Something is wrong."
   fi
  
- 
 }
+
+
+function getUserPublicKey() {
+  if [ -f ~/.ssh/id_rsa.pub ]; then
+    local USER_PUBLIC_KEY=$(grep -v \# ~/.ssh/id_rsa.pub | grep -v ^$)
+    echo "${USER_PUBLIC_KEY}"
+    return 0
+  else
+    echo "Publuc-Key-Not-Found"
+    return 1
+  fi
+}
+
+
+
+
+

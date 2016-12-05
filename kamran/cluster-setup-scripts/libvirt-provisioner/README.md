@@ -1,3 +1,10 @@
+This README is VERY DRAFTY. Please ignore for now.
+
+
+
+
+
+
 # The libvirt machine provisioner
 Designed to provision virtual machines using kvm/libvirt. Instead of provisioning each node painstakingly, or provisioning one and the ngoing through cloning and manually changing various OS configurations, here is a solution which uses tools provided by libvirt in concert with standard linux provisioning tools, such as kickstart.
 
