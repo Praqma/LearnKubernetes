@@ -190,10 +190,11 @@ function createVM() {
   local VM_NETWORK_NAME=$3
   local HTTP_BASE_URL=$4
   local LIBVIRT_CONNECTION=$5
+  local INSTALL_TIME_RAM=$6
 
   local VM_RAM=$(getNodeRAM ${NODE_NAME})
   local VM_DISK=$(getNodeDisk ${NODE_NAME})
-  local INSTALL_TIME_RAM=1280
+
 
   virt-install --connect ${LIBVIRT_CONNECTION} -n ${NODE_NAME} --description "$NODE_NAME" --hvm \
        --cpu host --os-type Linux  --os-variant fedora22  \
@@ -221,6 +222,8 @@ function createVMAll() {
   local VM_NETWORK_NAME=$3
   local HTTP_BASE_URL=$4
   local LIBVIRT_CONNECTION=$5
+  local INSTALL_TIME_RAM=$6
+  local PARALLEL=$7
 
   # This creates VMs for all nodes
 
@@ -237,8 +240,18 @@ function createVMAll() {
     for node in $(grep "$THREE_OCTETS" ../hosts | egrep -v "\^#|\-" | awk '{print $2}'); do
       # list of parametes passed to generateKickstartNode are:
       # Node FQDN , Network Gateway IP, Network Mask
-      echolog "Calling: createVM $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}"
-      createVM  $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION}
+      echolog "Calling: createVM $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM}"
+
+      if [ $PARALLEL -eq 1 ] ; then
+        # Notice the & for parallel
+        createVM  $node i$VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM} &
+        sleep 1
+      else
+        createVM  $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM}
+      fi 
+    
+      # wait here for parallel/child/background processes to finish
+      wait
 
     done
   else
@@ -257,6 +270,27 @@ function getUserPublicKey() {
     echo "Publuc-Key-Not-Found"
     return 1
   fi
+}
+
+
+function checkInstallTimeRAM() {
+  local INSTALL_TIME_RAM=$1
+  local REGEX='^[0-9]+$'
+  # Notice special syntax for this "if"
+  if [[ ${INSTALL_TIME_RAM} =~ $REGEX ]] ; then
+    # It is a number! good!
+    if [ ${INSTALL_TIME_RAM} -lt 1280 ] ; then
+       echo "Install-Time-RAM-Not-Enough"
+       return 1
+    else
+       echo $INSTALL_TIME_RAM
+       return 0
+    fi
+  else
+    echo "Install-Time-RAM-Size-Not-Integer"
+    return 1
+  fi
+
 }
 
 

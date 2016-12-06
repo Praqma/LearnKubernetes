@@ -99,6 +99,21 @@ else
 fi
 
 
+# Check if INSTALL_TIME_RAM is defined and is enough
+if [ -z "$INSTALL_TIME_RAM" ] ; then
+  echolog "INSTALL_TIME_RAM found empty. Using 1280 (MB) as the default value."
+  INSTALL_TIME_RAM=1280
+else
+  checkInstallTimeRAM $INSTALL_TIME_RAM > /dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echolog "Found problem with INSTALL_TIME_RAM: $(checkInstallTimeRAM $INSTALL_TIME_RAM) ."
+    my_exit 1
+  fi
+fi
+
+echolog "Using $INSTALL_TIME_RAM MB of RAM for each VM for provisioning process."
+
+
 if [ -z "${HTTP_BASE_URL}" ] ; then
   echolog "HTTP_BASE_URL found empty. You need to provide the URL where the provisioner expects the cd contents of the Fedora ISO. Plus a port number in case the port is not 80."
   echo "You also need to have /cdrom and /kickstart being served through this URL."
@@ -149,11 +164,37 @@ fi
 # Get current user's public key. This is used in the kickstart file.
 if [ getUserPublicKey ] ; then
   USER_PUBLIC_KEY=$(getUserPublicKey)
-  echolog "Found current user's RSA key as: $(echo $USER_PUBLIC_KEY | cut -c -20 ) ..."
+  # echolog "Found current user's RSA key as: $(echo $USER_PUBLIC_KEY | cut -c -40 ) ..."
+  echolog "Found current user's RSA key as: $(echo $USER_PUBLIC_KEY)"
 else
   echolog "Could not find public key (of the RSA key-pair) for the current user $USER in ~/.ssh/id_rsa.pub  . Please generate a key-pair for current user, using 'ssh-keygen -t rsa' . Exiting ... "
   my_exit 1
 fi
+
+
+
+# Check if PARALLEL is set:
+if [ -z "$PARALLEL" ] || [ "$PARALLEL" != "1" ] ; then
+  # if empty then set parallel to zero (no)  - i.e. disable it.
+  PARALLEL=0
+  echolog "Parallel provisioning is disabled"
+else
+  # Here check if we have enough RAM to execute x number of VMs in parallel.
+  # By this time, we already know the value of INSTALL_TIME_RAM , so we will use it for calculation. 
+  NETWORK_OCTETS=$(getFirstThreeOctectsOfIP $(getLibvirtNetworkIP $LIBVIRT_NETWORK_NAME))
+  TOTAL_VMS=$(egrep ^${NETWORK_OCTETS} ../hosts | wc -l)
+  # minus 512 MB to accomodate for host system OS.
+  SYSTEM_RAM=$(cat /proc/meminfo | grep MemTotal | awk '{print int($2/1000) - 512}')
+  TOTAL_RAM=$(expr $INSTALL_TIME_RAM \* $TOTAL_VMS)
+  if [ $TOTAL_RAM -gt $SYSTEM_RAM ] ; then
+    echolog "PARALLEL is set to 1 (true/yes), and the total RAM required by all ${TOTAL_VMS} VMs (${TOTAL_RAM})is more than the installed system RAM ${SYSTEM_RAM}. This is not possible. Forcing PARALLEL=0 on run time."
+    PARALLEL=0
+  else
+    echolog "PARALLEL is set to 1 (true/yes), and the total RAM required by all ${TOTAL_VMS} VMs (${TOTAL_RAM}) is less than the installed system RAM ${SYSTEM_RAM}. This is good. The provisioner will run in parallel."
+    PARALLEL=1
+  fi
+fi
+
 
 
 
@@ -191,14 +232,8 @@ LIBVIRT_NETWORK_MASK=$(getLibvirtNetworkMask $LIBVIRT_NETWORK_NAME)
 # echo "Network Mask for VMs belonging to this network is: ${LIBVIRT_NETWORK_MASK}"
 
 
-# INSTALL_TIME_RAM:
+# INSTALL_TIME_RAM defined in ../cluster.conf 
 
-# Provisioning using kickstart, over the network, requires more RAM than normal.
-# So I will use 1280 MB for each VM during provisioning. As soon as node is provisioned, 
-# I will use virt-xml to edit the configuration and set the RAM of the node to the 
-# amount mentioned in the hosts file.
-
-INSTALL_TIME_RAM=1280
 
 
 
@@ -220,8 +255,8 @@ THREE_OCTETS=$(getFirstThreeOctectsOfIP ${LIBVIRT_NETWORK_IP})
 generateKickstartAll ${THREE_OCTETS} ${LIBVIRT_NETWORK_IP} ${LIBVIRT_NETWORK_MASK} ${USER_PUBLIC_KEY}
 
 
-echo "Running Main: createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}"
-createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}
+# echo "Running Main: createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}"
+# createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM} ${PARALLEL}
 
 
  
