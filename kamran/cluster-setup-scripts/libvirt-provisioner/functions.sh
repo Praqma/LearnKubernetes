@@ -172,7 +172,7 @@ function generateKickstartAll() {
   if [ checkHostsFile ] ; then
     # Here we generate kickstart files,
     # ignore lines with '-' in them
-    for node in $(grep "$THREE_OCTETS" ../hosts | egrep -v "\^#|\-" | awk '{print $2}'); do
+    for node in $(grep ^"$THREE_OCTETS" ../hosts | egrep -v "\^#|\-" | awk '{print $2}'); do
       # list of parametes passed to generateKickstartNode are:
       # Node FQDN , Network Gateway IP, Network Mask 
       echolog "Running: generateKickstartNode $node $NETWORK_GATEWAY_IP $NETWORK_MASK"
@@ -184,7 +184,7 @@ function generateKickstartAll() {
 }
 
 function createVM() {
-  # This function creates the actul VM
+  # This creates the actul VM
   local NODE_NAME=$1
   local VM_DISK_DIRECTORY=$2
   local VM_NETWORK_NAME=$3
@@ -210,7 +210,7 @@ function createVM() {
 }
 
 function createVMAll() {
-  # This function creates the VMs by calling another function 'createVM' 
+  # This creates the VMs by calling  'createVM'  func tion.
 
   # receive THREE_OCTETS as $1 to create list of nodes from hosts file.
   # receive VM_DISK_DIRECTORY as $2
@@ -237,23 +237,29 @@ function createVMAll() {
   if [ checkHostsFile ] ; then
     # Here we use the generated kickstart files, to create VMs.
     # ignore lines with '-' in them
-    for node in $(grep "$THREE_OCTETS" ../hosts | egrep -v "\^#|\-" | awk '{print $2}'); do
+    for node in $(grep ^"$THREE_OCTETS" ../hosts | egrep -v "\^#|\-" | awk '{print $2}'); do
       # list of parametes passed to generateKickstartNode are:
       # Node FQDN , Network Gateway IP, Network Mask
       echolog "Calling: createVM $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM}"
-
       if [ $PARALLEL -eq 1 ] ; then
+        # Set a variable with parallel option "&" , and just append it to command, if not set it to blank 
+        PARALLEL_OPTION='&'
         # Notice the & for parallel
-        createVM  $node i$VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM} &
+        echo "Running createVM in Parallel mode"
+        createVM  $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM} &
         sleep 1
       else
+        echo "Running createVM in Serial mode"
+        PARALLEL_OPTION=''
         createVM  $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM}
       fi 
     
-      # wait here for parallel/child/background processes to finish
-      wait
-
+      # echo "DEBUG: createVM  $node $VM_DISK_DIRECTORY $VM_NETWORK_NAME $HTTP_BASE_URL ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM} ${PARALLEL_OPTION}"
+      # sleep 1
     done
+
+    # wait here for parallel/child/background processes to finish
+    wait
   else
     echolog "Hosts file could not be read. Something is wrong."
   fi
@@ -292,8 +298,5 @@ function checkInstallTimeRAM() {
   fi
 
 }
-
-
-
 
 

@@ -114,6 +114,31 @@ fi
 echolog "Using $INSTALL_TIME_RAM MB of RAM for each VM for provisioning process."
 
 
+# Check if PARALLEL is set:
+if [ -z "$PARALLEL" ] || [ "$PARALLEL" != "1" ] ; then
+  # if empty then set parallel to zero (no)  - i.e. disable it.
+  PARALLEL=0
+  echolog "Parallel provisioning is disabled"
+else
+  # Here check if we have enough RAM to execute x number of VMs in parallel.
+  # By this time, we already know the value of INSTALL_TIME_RAM , so we will use it for calculation. 
+  NETWORK_OCTETS=$(getFirstThreeOctectsOfIP $(getLibvirtNetworkIP $LIBVIRT_NETWORK_NAME))
+  TOTAL_VMS=$(egrep ^${NETWORK_OCTETS} ../hosts | grep -v '-' | wc -l)
+  # minus 512 MB to accomodate for host system OS.
+  SYSTEM_RAM=$(cat /proc/meminfo | grep MemTotal | awk '{print int($2/1000) - 512}')
+  TOTAL_RAM=$(expr $INSTALL_TIME_RAM \* $TOTAL_VMS)
+  if [ $TOTAL_RAM -gt $SYSTEM_RAM ] ; then
+    echolog "PARALLEL is set to 1 (true/yes), and the total RAM required by all ${TOTAL_VMS} VMs (${TOTAL_RAM}) is more than the installed system RAM ${SYSTEM_RAM}. This is not possible. Forcing PARALLEL=0 on run time."
+    PARALLEL=0
+  else
+    echolog "PARALLEL is set to 1 (true/yes), and the total RAM required by all ${TOTAL_VMS} VMs (${TOTAL_RAM}) is less than the installed system RAM ${SYSTEM_RAM}. This is good. The provisioner will run in parallel."
+    PARALLEL=1
+  fi
+fi
+
+
+
+
 if [ -z "${HTTP_BASE_URL}" ] ; then
   echolog "HTTP_BASE_URL found empty. You need to provide the URL where the provisioner expects the cd contents of the Fedora ISO. Plus a port number in case the port is not 80."
   echo "You also need to have /cdrom and /kickstart being served through this URL."
@@ -159,8 +184,10 @@ else
   my_exit 1
 fi
 
-# checkKickstart
 
+
+
+echo
 # Get current user's public key. This is used in the kickstart file.
 if [ getUserPublicKey ] ; then
   USER_PUBLIC_KEY=$(getUserPublicKey)
@@ -170,32 +197,6 @@ else
   echolog "Could not find public key (of the RSA key-pair) for the current user $USER in ~/.ssh/id_rsa.pub  . Please generate a key-pair for current user, using 'ssh-keygen -t rsa' . Exiting ... "
   my_exit 1
 fi
-
-
-
-# Check if PARALLEL is set:
-if [ -z "$PARALLEL" ] || [ "$PARALLEL" != "1" ] ; then
-  # if empty then set parallel to zero (no)  - i.e. disable it.
-  PARALLEL=0
-  echolog "Parallel provisioning is disabled"
-else
-  # Here check if we have enough RAM to execute x number of VMs in parallel.
-  # By this time, we already know the value of INSTALL_TIME_RAM , so we will use it for calculation. 
-  NETWORK_OCTETS=$(getFirstThreeOctectsOfIP $(getLibvirtNetworkIP $LIBVIRT_NETWORK_NAME))
-  TOTAL_VMS=$(egrep ^${NETWORK_OCTETS} ../hosts | wc -l)
-  # minus 512 MB to accomodate for host system OS.
-  SYSTEM_RAM=$(cat /proc/meminfo | grep MemTotal | awk '{print int($2/1000) - 512}')
-  TOTAL_RAM=$(expr $INSTALL_TIME_RAM \* $TOTAL_VMS)
-  if [ $TOTAL_RAM -gt $SYSTEM_RAM ] ; then
-    echolog "PARALLEL is set to 1 (true/yes), and the total RAM required by all ${TOTAL_VMS} VMs (${TOTAL_RAM})is more than the installed system RAM ${SYSTEM_RAM}. This is not possible. Forcing PARALLEL=0 on run time."
-    PARALLEL=0
-  else
-    echolog "PARALLEL is set to 1 (true/yes), and the total RAM required by all ${TOTAL_VMS} VMs (${TOTAL_RAM}) is less than the installed system RAM ${SYSTEM_RAM}. This is good. The provisioner will run in parallel."
-    PARALLEL=1
-  fi
-fi
-
-
 
 
 echo
@@ -255,8 +256,8 @@ THREE_OCTETS=$(getFirstThreeOctectsOfIP ${LIBVIRT_NETWORK_IP})
 generateKickstartAll ${THREE_OCTETS} ${LIBVIRT_NETWORK_IP} ${LIBVIRT_NETWORK_MASK} ${USER_PUBLIC_KEY}
 
 
-# echo "Running Main: createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}"
-# createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM} ${PARALLEL}
+echo "Running Main: createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION}"
+createVMAll ${THREE_OCTETS} ${VM_DISK_DIRECTORY} ${LIBVIRT_NETWORK_NAME} ${HTTP_BASE_URL} ${LIBVIRT_CONNECTION} ${INSTALL_TIME_RAM} ${PARALLEL}
 
 
  

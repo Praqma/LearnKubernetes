@@ -4,11 +4,11 @@
 10.240.0.11	etcd1.example.com	etcd1		256	5
 10.240.0.12	etcd2.example.com	etcd2		256	5
 10.240.0.13	etcd3.example.com	etcd3		256	5
-10.240.0.21	controller1.example.com	controller1	384	5
-10.240.0.22	controller2.example.com	controller2	384	5
-10.240.0.20	controller.example.com	controller	-	-
-10.240.0.31	worker1.example.com	worker1		1024	20
-10.240.0.32	worker2.example.com	worker2		1024	20
-10.240.0.41	lb1.example.com		lb1		256	5
-10.240.0.42	lb2.example.com		lb2		256	5
-10.240.0.40	lb.example.com		lb		-	-
+# 10.240.0.21	controller1.example.com	controller1	384	5
+# 10.240.0.22	controller2.example.com	controller2	384	5
+# 10.240.0.20	controller.example.com	controller	-	-
+# 10.240.0.31	worker1.example.com	worker1		1024	20
+# 10.240.0.32	worker2.example.com	worker2		1024	20
+# 10.240.0.41	lb1.example.com		lb1		256	5
+# 10.240.0.42	lb2.example.com		lb2		256	5
+# 10.240.0.40	lb.example.com		lb		-	-
