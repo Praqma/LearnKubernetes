@@ -195,9 +195,10 @@ function createVM() {
   local VM_RAM=$(getNodeRAM ${NODE_NAME})
   local VM_DISK=$(getNodeDisk ${NODE_NAME})
 
+  # --cpu host # removed from the command below, because some older CPUs are not compatible.
 
   virt-install --connect ${LIBVIRT_CONNECTION} -n ${NODE_NAME} --description "$NODE_NAME" --hvm \
-       --cpu host --os-type Linux  --os-variant fedora22  \
+      --os-type Linux  --os-variant fedora22  \
       --ram $INSTALL_TIME_RAM  --vcpus 1  --features acpi=on,apic=on  --clock offset=localtime  \
       --disk path=${VM_DISK_DIRECTORY}/${NODE_NAME}.qcow2,bus=virtio,size=${VM_DISK}  \
       --network network=${VM_NETWORK_NAME}  \
