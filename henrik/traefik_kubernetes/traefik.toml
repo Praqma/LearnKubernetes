@@ -1,0 +1,23 @@
+[web]
+
+# Web administration port
+  address = ":888"
+
+# SSL certificate and key used
+# CertFile = "traefik.crt"
+# KeyFile = "traefik.key"
+
+
+# Enable more detailed statistics
+  [web.statistics]
+
+################################################################
+# Kubernetes Ingress configuration backend
+################################################################
+[kubernetes]
+
+# Kubernetes server endpoint
+#
+endpoint = "http://controller.example.com:8080"
+namespaces = ["default","production"]
+

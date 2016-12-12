@@ -1,0 +1,14 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: tool
+spec:
+  rules:
+  - host: tool.example.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: tool
+          servicePort: 80
+
