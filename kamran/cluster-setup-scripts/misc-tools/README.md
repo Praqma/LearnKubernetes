@@ -43,4 +43,6 @@ Assume you have 10 or 20 or 100 machines, a cluster, such as a kubernetes cluste
 The `get-fingerprints.sh` does two things. It picks your hosts file, scans your known_hosts file and removes all the entries based on what it finds in the hosts file. (**Note:** This is specially in context to kubernetes cluster) . Then, it does an ssh-keyscan on all the nodes and adds them to your known_hosts. Simple! 
 
 
- 
+# get-dates.sh
+To verify that you will be able to connect to the cluster nodes without being presented with fingerprints, you run the innocent `get-dates.sh`  script, which simply connects to each node (obtained from hosts file) , and shows the date and time on the target computer.
+
