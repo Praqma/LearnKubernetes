@@ -18,14 +18,12 @@ done
 # This is then used by ssh-keyscan.
   
 for node in $(grep ^10.240.0  ../hosts | grep -v \# | awk '{print $1 "," $2}') ; do  
-  # This produces X lines of output where X corresponds to the number of enabled hosts in the hosts file.
-  # But since there is a comma (,) in awk command the two variables (IP and FQDN) are separated by space,
-  # which are treated as two separate values by the for command. thus this loop runs for (2 times X) times,
-  # which we use to remove all possible lines from the known_hosts file - which is safe.
+  # This produces X lines of output where X corresponds to the number of enabled hosts in the hosts file. 
+  # The IP and FQDN are concatenated by a comma which is treated as one value by the for loop. 
  
   echo "Adding fingerprint in ~/.ssh/known_hosts for node \"$node\"  "
   echo "-------------------------------------------------------------------------------"
-  # sed -i '/${node}/d' /home/kamran/.ssh/known_hosts
+  ssh-keyscan $node   >> ~/.ssh/known_hosts
 done
 
 
