@@ -1,0 +1,8 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: mysql-confluence-db
+data:
+  create-confluence-db.sh: |-
+    echo "CREATE DATABASE IF NOT EXISTS confluence CHARACTER SET utf8 COLLATE utf8_bin" | mysql --host=localhost --user=root --password=$MYSQL_ROOT_PASSWORD
+    echo "GRANT ALL PRIVILEGES ON confluence.* TO '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD'" | mysql --host=localhost --user=root --password=$MYSQL_ROOT_PASSWORD

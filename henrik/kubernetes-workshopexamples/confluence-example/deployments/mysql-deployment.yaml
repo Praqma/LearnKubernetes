@@ -1,0 +1,65 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  serviceName: "mysql"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: mysql
+        image: mysql:5.6
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1.0G"
+        ports:
+        - containerPort: 3306
+          name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: mysql-root-password
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: mysql-user
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: mysql-password
+        volumeMounts:
+        - name: database
+          mountPath: /var/lib/mysql
+        - name: mysql-confluence-db
+          mountPath: /docker-entrypoint-initdb.d/
+        - name: config-volume
+          mountPath: /etc/mysql/conf.d
+      volumes:
+      - name: database
+        persistentVolumeClaim:
+          claimName: mysql-pv-claim
+      - name: config-volume
+        configMap:
+          name: mysql-config
+      - name: mysql-confluence-db
+        configMap:
+          name: mysql-confluence-db
+
+         #  volumeClaimTemplates:
+#  - metadata:
+#      name: database
+#    spec:
+#      accessModes: [ "ReadWriteOnce" ]
+#      resources:
+#        requests:
+#          storage: 1Gi

@@ -1,0 +1,50 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: mysql
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: mysql
+        image: mysql:5.6
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1.0G"
+        ports:
+        - containerPort: 3306
+          name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: mysql-root-password
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: mysql-user
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: mysql-password
+        volumeMounts:
+        - name: mysql-confluence-db
+          mountPath: /docker-entrypoint-initdb.d/
+        - name: config-volume
+          mountPath: /etc/mysql/conf.d
+      volumes:
+      - name: config-volume
+        configMap:
+          name: mysql-config
+      - name: mysql-confluence-db
+        configMap:
+          name: mysql-confluence-db

@@ -1,0 +1,3 @@
+jdbc:mysql://mysql.default.svc.cluster.local/confluence?sessionVariables=storage_engine%3DInnoDB&useUnicode=true&characterEncoding=utf8
+confluence
+confluencepassword
