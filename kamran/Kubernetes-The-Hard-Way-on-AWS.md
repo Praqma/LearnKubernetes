@@ -402,6 +402,7 @@ Copy the three certificate (.pem) files to etcd directory:
 
 
 Create the etcd systemd unit file (as it is - i.e. Do not replcace ETCD_NAME and INTERNAL_IP yet):
+Note: In case of Ubuntu(16.04.3) machines, ensure that you do *not* use the already existing systemd init files with its configs `/etc/default/etcd`. Either modify the service file with the below mentioned values or drop a new one as mentioned below.  
 ``` 
 cat > etcd.service <<"EOF"
 [Unit]
