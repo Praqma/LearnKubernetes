@@ -48,10 +48,35 @@ printf $(kubectl get secret --namespace default jenkins-jenkins -o jsonpath="{.d
 
 Username is 'admin'.
 
+When trying out a pipeline, most people will immediately notice that the slave is not necessarily there. By default, Helm utilizes the Kubernetes plugin. This means any given job is run by making a container, sending the job to that container, and then killing the container - all within a defined namespace in Kubernetes. 
+
+To set this up, go to Manage System (Manage Jenkins) and find the Kubernetes section. 
+
+Here the Kubernetes URL should be: https://kubernetes.default.svc.cluster.local as this targets our cluster.
+
+After making sure all plugins are up to date and so on, running a job will create a container in the requested namespace (default if nothing is specified) and send jobs there. 
+
+You can test this, by making a freestyle job with echo "hello" and watching pods: 
+```
+ kubectl get pods --all-namespaces -w
+```
+
+Which results in something like: 
+```
+default   default-gstvj   0/1       Pending             0s
+default   default-gstvj   0/1       Pending             0s
+default   default-gstvj   0/1       ContainerCreating   0s     
+default   default-gstvj   1/1       Running             1s
+default   default-gstvj   1/1       Terminating         17s
+```
+
+That then executes the job. First run may take a bit, as the docker image has to be downloaded. Concurrent builds take ~10 sec to spin up the container.
+
 To clean up run: 
 ```
 helm del --purge jenkins
 ```
+
 
 ## Step 4: Artifactory
 ```
