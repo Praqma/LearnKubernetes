@@ -40,7 +40,7 @@ or run:
 minikube service jenkins-jenkins 
 ```
 
-## Step 4: Play with Jenkins? 
+### Play with Jenkins : Obtaining admin and password
 Get your password running: 
 ```
 printf $(kubectl get secret --namespace default jenkins-jenkins -o jsonpath="{.data.jenkins-admin-password}" | base64 --decode);echo
@@ -53,7 +53,7 @@ To clean up run:
 helm del --purge jenkins
 ```
 
-## Step 5: Artifactory
+## Step 4: Artifactory
 ```
 helm install --name artifactory stable/artifactory
 ```
@@ -68,3 +68,20 @@ minikube service external-artifactory
 ```
 
 Similarly to jenkins, there is a lot of configuration options. 
+
+   Default credential for Artifactory:
+   user: admin
+   password: password
+
+### Artifactory misc: Setting up your own Volumes
+While the artifactory deployment natively already creates volumes, you might notice that these are lost when deleting the artifactory deployment. 
+[In the template folder on the helm chart](https://github.com/kubernetes/charts/tree/master/stable/artifactory/templates) there is no PersistantVolume, so what happens is that the Helm deployment itself creates and maintains the volumes. This also means they are deleted, when the deployment is removed resulting in a data loss. 
+
+To circumvent this problem, merely link three volumes to the existing Claims suggested by the deployment like [this one for nginx](pv-arti-nginx.yml), [this one for artifactory itself](pv-arti-arti.yml) and [this one for psql](pv-arti-psql.yml). 
+
+All the PVC created by Helm's Artifactory look for a Storage Class called Standard, so we give that: 
+```
+storageClassName: Standard
+``` 
+
+And it links these volumes and they survive past death. 
