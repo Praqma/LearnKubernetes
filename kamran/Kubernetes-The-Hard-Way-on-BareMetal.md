@@ -1,12 +1,12 @@
 # Kubernetes The Hard Way - Bare Metal
 
-This document is going to be the last document in the series of Kubernetes the Hard Way. It follows Kelsey Hightower's tutorial [https://github.com/kelseyhightower/kubernetes-the-hard-way](https://github.com/kelseyhightower/kubernetes-the-hard-way) , and attempts to make improvements and explanations where needed. So here we go.
+This document is going to be the last document in the series of Kubernetes the Hard Way. It follows Kelsey Hightower's tutorial [https://github.com/kelseyhightower/kubernetes-the-hard-way](https://github.com/kelseyhightower/kubernetes-the-hard-way), and attempts to make improvements and explanations where needed. So here we go.
 
 # Target Audience
 The target audience for this tutorial is someone planning to setup or support a production Kubernetes cluster and wants to understand how everything fits together. 
 
 # Infrastructure:
-I do not have actual bare metal. I have vitual machines, running on LibVirt/KVM on my work computer (Fedora 23 - 64 bit). Some may argue that I could have used Amazon AWS, and used VMs over there too. Well, I tried that , documented here: [Kubernetes-The-Hard-Way-on-AWS.md](Kubernetes-The-Hard-Way-on-AWS.md) , and it did not work when I reached Pod Networking on worker nodes. Amazon has it's VPC mechanism, and it did not let the traffic flow between two pod networks on two different worker nodes. May be I did not know how to get that done correctly, but this type of routing on AWS VPC is not documented either. So I had to abandon it. 
+I do not have actual bare metal. I have vitual machines, running on LibVirt/KVM on my work computer (Fedora 23 - 64 bit). Some may argue that I could have used Amazon AWS, and used VMs over there too. Well, I tried that , documented here: [Kubernetes-The-Hard-Way-on-AWS.md](Kubernetes-The-Hard-Way-on-AWS.md), and it did not work when I reached Pod Networking on worker nodes. Amazon has it's VPC mechanism, and it did not let the traffic flow between two pod networks on two different worker nodes. May be I did not know how to get that done correctly, but this type of routing on AWS VPC is not documented either. So I had to abandon it. 
 
 
 So, I am going to use VMs on my work computer to create this setup. But before I start building VMs, I want to mention few important things.
@@ -25,7 +25,7 @@ Kelsey used the following three networks in his guide, and I intend to use the s
 * Pod Network (Cluster CIDR): 10.200.0.0/16 
 
 
-By default I have a virtual network 192.168.124.0/24 configured on my work computer, provided by libvirt. However, I want to be as close to Kelsey's guide as possible, so my infrastructure network is going to be 10.240.0.0/24 . I will just create a new virtual network (10.240.0.0/24) on my work computer.
+By default I have a virtual network 192.168.124.0/24 configured on my work computer, provided by libvirt. However, I want to be as close to Kelsey's guide as possible, so my infrastructure network is going to be 10.240.0.0/24. I will just create a new virtual network (10.240.0.0/24) on my work computer.
 
 
 The setup will look like this when finished:
@@ -39,7 +39,7 @@ It is understood that all nodes in this cluster will have some hostname assigned
 
 
 ## Operating System:
-Fedora 24 64 bit server edition - on all nodes (Download from [here](https://getfedora.org/en/server/download/) ). Even though I wanted to use Fedora Atomic, I am not using that. It is because Fedora Atomic is a collection of binaries bundled together (in a read only  filesystem), and individual packages cannot be updated. There is no yum, etc. I am going to use latest version of Kubernetes 1.3, which is still not part of Fedora Atomic. 
+Fedora 24 64 bit server edition - on all nodes (Download from [here](https://getfedora.org/en/server/download/)). Even though I wanted to use Fedora Atomic, I am not using that. It is because Fedora Atomic is a collection of binaries bundled together (in a read only  filesystem), and individual packages cannot be updated. There is no yum, etc. I am going to use latest version of Kubernetes 1.3, which is still not part of Fedora Atomic. 
 
 # Expectations
 
@@ -101,8 +101,8 @@ As I mentioned earlier, there will be two controller nodes in HA mode. There is 
 
 **Notes:** 
 * Kelsey's Kubernetes guide (the one this guide uses as a reference), starts the node numbering from 0. We start them from 1 for ease of understanding.
-* The FQDN of each host is `*hostname*.example.com` 
-* The nodes have only one user, **root** ; with a password: **redhat** .
+* The FQDN of each host is `*hostname*.example.com`.
+* The nodes have only one user, **root** ; with a password: **redhat**.
 * I used libvirt's GUI interface (virt-manager) to create these VMs, but you can automate this by using CLI commands.
 * Though the sizes of the disks listed above is bare minimum, for testing; you should keep in mind that etcd creates large .wal files in `/var/lib/etcd/member/*` and controller and worker nodes generate a lot of logs, which will quickly fill up your v-disks. So either use large virtual disks, (if your host has enough capacity), or, setup cleanup mechanisms to free up disks.
 * Ideally you should setup large v-disks, (say an additional 1 or 2 GB for each node), and have a large swap partition. Disk is cheap and memory is expensive. Even the test cluster can be stressed because of whatever experiments you want to conduct on it, and swapping *will* happen. Large swap is better then having oom_killer getting activated and killing random processes on your nodes.
@@ -208,7 +208,7 @@ You should be able to execute commands on the nodes now:
 I also updated my /etc/hosts on my work computer:
 ```
 [kamran@kworkhorse ~]$ sudo vi /etc/hosts
-127.0.0.1               localhost.localdomain localhost
+127.0.0.1       localhost.localdomain   localhost
 10.240.0.11     etcd1.example.com       etcd1
 10.240.0.12     etcd2.example.com       etcd2
 10.240.0.21     controller1.example.com controller1
@@ -281,7 +281,7 @@ Disabled
 Reference: [https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/02-certificate-authority.md](https://github.com/kelseyhightower/kubernetes-the-hard-way/blob/master/docs/02-certificate-authority.md)
 
 
-Before we start configuring various services on the nodes, we need to create the SSL/TLS certifcates, which will be used by the kubernetes components . Here I will setup a single certificate, but in production you are advised to create individual certificates for each component/service. We need to secure the following Kubernetes components:
+Before we start configuring various services on the nodes, we need to create the SSL/TLS certifcates, which will be used by the kubernetes components. Here I will setup a single certificate, but in production you are advised to create individual certificates for each component/service. We need to secure the following Kubernetes components:
 
 * etcd
 * Kubernetes API Server
@@ -449,7 +449,7 @@ Certificate:
 ## Generate the single Kubernetes TLS certificate:
 **Reminder:** We will generate a TLS certificate that will be valid for all Kubernetes components. This is being done for ease of use. In production you should strongly consider generating individual TLS certificates for each component.
 
-We should also setup an environment variable named `KUBERNETES_PUBLIC_IP_ADDRESS` with the value `10.240.0.20` . This will be handy in the next step.
+We should also setup an environment variable named `KUBERNETES_PUBLIC_IP_ADDRESS` with the value `10.240.0.20`. This will be handy in the next step.
 
 ```
 export KUBERNETES_PUBLIC_IP_ADDRESS='10.240.0.20'
@@ -459,7 +459,7 @@ export KUBERNETES_PUBLIC_IP_ADDRESS='10.240.0.20'
 
 Be careful in creating this file. Make sure you use all the possible hostnames of the nodes you are generating this certificate for. This includes their FQDNs. When you setup node names like "nodename.example.com" then you need to include that in the CSR config file below. Also add a few extra entries for worker nodes, as you might want to increase the number of worker nodes later in this setup. So even though I have only two worker nodes right now, I have added two extra in the certificate below, worker 3 and 4. The hostnames controller.example.com and kubernetes.example.com are supposed to point to the VIP (10.240.0.20) of the controller nodes. All of these has to go into the infrastructure DNS.
 
-**Note:** Kelsey's guide set "CN" to be "kubernetes", whereas I set it to "*.example.com" . See: [https://cabforum.org/information-for-site-owners-and-administrators/](https://cabforum.org/information-for-site-owners-and-administrators/)
+**Note:** Kelsey's guide set "CN" to be "kubernetes", whereas I set it to "*.example.com". See: [https://cabforum.org/information-for-site-owners-and-administrators/](https://cabforum.org/information-for-site-owners-and-administrators/).
 
 ```
 cat > kubernetes-csr.json <<EOF
